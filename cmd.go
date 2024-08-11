@@ -2,6 +2,7 @@
 package money
 
 import (
+	"github.com/arjungandhi/money/pkg/config"
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
 )
@@ -10,8 +11,9 @@ import (
 // its just holds all the other useful commands
 var Cmd = &Z.Cmd{
 	Name:    "money",
-	Summary: "money is a command line tool for managing my money"
+	Summary: "money is a command line tool for managing my money",
 	Commands: []*Z.Cmd{
 		help.Cmd,
+		config.Cmd,
 	},
 }
