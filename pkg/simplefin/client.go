@@ -2,6 +2,7 @@ package simplefin
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -53,15 +54,29 @@ func createHTTPClient() *http.Client {
 	}
 }
 
-func (c *Client) ExchangeToken(token string) (accessURL, username, password string, err error) {
-	// Validate that the token is a valid URL
-	_, err = url.Parse(token)
+func (c *Client) ExchangeToken(setupToken string) (accessURL, username, password string, err error) {
+	var claimURL string
+	
+	// Try to parse as URL first (direct format)
+	if strings.HasPrefix(setupToken, "http://") || strings.HasPrefix(setupToken, "https://") {
+		claimURL = setupToken
+	} else {
+		// Try base64 decoding (encoded format)
+		claimURLBytes, err := base64.StdEncoding.DecodeString(setupToken)
+		if err != nil {
+			return "", "", "", fmt.Errorf("invalid setup token: not a URL and failed to decode as base64: %w", err)
+		}
+		claimURL = string(claimURLBytes)
+	}
+	
+	// Validate that the claim URL is valid
+	_, err = url.Parse(claimURL)
 	if err != nil {
-		return "", "", "", fmt.Errorf("invalid setup token URL: %w", err)
+		return "", "", "", fmt.Errorf("invalid claim URL: %w", err)
 	}
 
-	// Create the claim request - POST to the setup token URL itself
-	req, err := http.NewRequest("POST", token, nil)
+	// Create the claim request - POST to the claim URL
+	req, err := http.NewRequest("POST", claimURL, nil)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create claim request: %w", err)
 	}
