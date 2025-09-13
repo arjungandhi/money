@@ -138,13 +138,34 @@ func (db *DB) HasCredentials() (bool, error) {
 
 // Organization methods
 func (db *DB) SaveOrganization(id, name, url string) error {
-	// TODO: Save organization data
+	// Use INSERT OR REPLACE to handle both new and existing organizations
+	_, err := db.conn.Exec(`
+		INSERT OR REPLACE INTO organizations (id, name, url)
+		VALUES (?, ?, ?)`,
+		id, name, sql.NullString{String: url, Valid: url != ""})
+	if err != nil {
+		return fmt.Errorf("failed to save organization: %w", err)
+	}
 	return nil
 }
 
 // Account methods
-func (db *DB) SaveAccount(id, orgID, name, currency string, balance, availableBalance int, balanceDate string) error {
-	// TODO: Save account data
+func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availableBalance *int, balanceDate string) error {
+	// Use INSERT OR REPLACE to handle both new and existing accounts
+	// Update the updated_at timestamp for existing accounts
+	var availableBalanceVal sql.NullInt64
+	if availableBalance != nil {
+		availableBalanceVal = sql.NullInt64{Int64: int64(*availableBalance), Valid: true}
+	}
+	
+	_, err := db.conn.Exec(`
+		INSERT OR REPLACE INTO accounts (id, org_id, name, currency, balance, available_balance, balance_date, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		id, orgID, name, currency, balance, availableBalanceVal,
+		sql.NullString{String: balanceDate, Valid: balanceDate != ""})
+	if err != nil {
+		return fmt.Errorf("failed to save account: %w", err)
+	}
 	return nil
 }
 
@@ -155,7 +176,15 @@ func (db *DB) GetAccounts() ([]Account, error) {
 
 // Transaction methods
 func (db *DB) SaveTransaction(id, accountID, posted string, amount int, description string, pending bool) error {
-	// TODO: Save transaction data
+	// Use INSERT OR IGNORE to avoid duplicate transactions
+	// If the transaction already exists, we don't update it to preserve any manual categorization
+	_, err := db.conn.Exec(`
+		INSERT OR IGNORE INTO transactions (id, account_id, posted, amount, description, pending)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		id, accountID, posted, amount, description, pending)
+	if err != nil {
+		return fmt.Errorf("failed to save transaction: %w", err)
+	}
 	return nil
 }
 
@@ -172,6 +201,16 @@ func (db *DB) GetUncategorizedTransactions() ([]Transaction, error) {
 func (db *DB) UpdateTransactionCategory(transactionID string, categoryID int) error {
 	// TODO: Update transaction with category assignment
 	return nil
+}
+
+// TransactionExists checks if a transaction with the given ID already exists
+func (db *DB) TransactionExists(id string) (bool, error) {
+	var count int
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM transactions WHERE id = ?", id).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check transaction existence: %w", err)
+	}
+	return count > 0, nil
 }
 
 // Category methods
