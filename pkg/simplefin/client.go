@@ -1,7 +1,6 @@
 package simplefin
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -55,32 +54,19 @@ func createHTTPClient() *http.Client {
 }
 
 func (c *Client) ExchangeToken(token string) (accessURL, username, password string, err error) {
-	// Parse the setup token URL to extract the bridge URL and claim token
-	tokenURL, err := url.Parse(token)
+	// Validate that the token is a valid URL
+	_, err = url.Parse(token)
 	if err != nil {
 		return "", "", "", fmt.Errorf("invalid setup token URL: %w", err)
 	}
 
-	// Extract the claim token from the URL path (after /claim/)
-	pathParts := strings.Split(tokenURL.Path, "/")
-	if len(pathParts) < 3 || pathParts[1] != "claim" {
-		return "", "", "", fmt.Errorf("invalid setup token format: expected /claim/{token}")
-	}
-	claimToken := pathParts[2]
-
-	// Build the bridge URL (base URL without the /claim/{token} path)
-	bridgeURL := fmt.Sprintf("%s://%s", tokenURL.Scheme, tokenURL.Host)
-
-	// Create the claim request
-	claimURL := fmt.Sprintf("%s/claim", bridgeURL)
-	requestBody := bytes.NewBufferString(claimToken)
-
-	req, err := http.NewRequest("POST", claimURL, requestBody)
+	// Create the claim request - POST to the setup token URL itself
+	req, err := http.NewRequest("POST", token, nil)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create claim request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// No special headers needed for SimpleFIN token exchange
 
 	// Use the client's HTTP client for token exchange, or create one if not set
 	httpClient := c.httpClient
