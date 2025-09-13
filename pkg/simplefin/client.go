@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -188,31 +189,80 @@ func (c *Client) SetHTTPClient(httpClient *http.Client) {
 
 // Response types based on SimpleFIN API
 type AccountsResponse struct {
-	Accounts      []Account      `json:"accounts"`
-	Organizations []Organization `json:"organizations"`
+	Accounts []Account `json:"accounts"`
+	Errors   []string  `json:"errors"`
 }
 
 type Account struct {
 	ID               string        `json:"id"`
-	OrgID            string        `json:"org"`
 	Name             string        `json:"name"`
+	Org              Organization  `json:"org"`
 	Currency         string        `json:"currency"`
-	Balance          int           `json:"balance"` // Amount in cents
-	AvailableBalance *int          `json:"available-balance,omitempty"`
-	BalanceDate      *string       `json:"balance-date,omitempty"`
+	Balance          string        `json:"balance"`           // Amount as string
+	AvailableBalance *string       `json:"available-balance,omitempty"`
+	BalanceDate      *int64        `json:"balance-date,omitempty"` // Unix timestamp
 	Transactions     []Transaction `json:"transactions"`
+	Holdings         []Holding     `json:"holdings,omitempty"`
 }
 
 type Transaction struct {
 	ID          string `json:"id"`
-	Posted      string `json:"posted"` // ISO 8601 timestamp
-	Amount      int    `json:"amount"` // Amount in cents
+	Posted      int64  `json:"posted"`     // Unix timestamp  
+	Amount      string `json:"amount"`     // Amount as string
 	Description string `json:"description"`
+	Memo        string `json:"memo,omitempty"`
+	Payee       string `json:"payee,omitempty"`
 	Pending     *bool  `json:"pending,omitempty"`
 }
 
 type Organization struct {
-	ID   string  `json:"id"`
-	Name string  `json:"name"`
-	URL  *string `json:"url,omitempty"`
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Domain   string  `json:"domain,omitempty"`
+	URL      *string `json:"url,omitempty"`
+	SfinURL  *string `json:"sfin-url,omitempty"`
+}
+
+type Holding struct {
+	ID            string `json:"id"`
+	Symbol        string `json:"symbol,omitempty"`
+	Description   string `json:"description,omitempty"`
+	Shares        string `json:"shares,omitempty"`
+	Currency      string `json:"currency,omitempty"`
+	MarketValue   string `json:"market_value,omitempty"`
+	PurchasePrice string `json:"purchase_price,omitempty"`
+	CostBasis     string `json:"cost_basis,omitempty"`
+	Created       *int64 `json:"created,omitempty"`
+}
+
+// Utility functions for data conversion
+
+// ParseAmountToCents converts a string amount (e.g., "123.45") to cents (e.g., 12345)
+func ParseAmountToCents(amountStr string) (int, error) {
+	if amountStr == "" {
+		return 0, nil
+	}
+	
+	// Parse the amount as a float
+	amount, err := strconv.ParseFloat(amountStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse amount '%s': %w", amountStr, err)
+	}
+	
+	// Convert to cents with proper rounding for both positive and negative numbers
+	cents := amount * 100
+	if cents >= 0 {
+		cents += 0.5
+	} else {
+		cents -= 0.5
+	}
+	return int(cents), nil
+}
+
+// UnixTimestampToISO converts a unix timestamp to ISO 8601 string format
+func UnixTimestampToISO(unixTimestamp int64) string {
+	if unixTimestamp == 0 {
+		return ""
+	}
+	return time.Unix(unixTimestamp, 0).UTC().Format(time.RFC3339)
 }

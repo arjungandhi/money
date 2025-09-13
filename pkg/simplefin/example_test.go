@@ -46,7 +46,15 @@ func ExampleClient_GetAccounts() {
 	// Process accounts
 	for _, account := range response.Accounts {
 		fmt.Printf("Account: %s (%s)\n", account.Name, account.Currency)
-		fmt.Printf("Balance: $%.2f\n", float64(account.Balance)/100)
+		
+		// Parse balance from string
+		balanceCents, err := simplefin.ParseAmountToCents(account.Balance)
+		if err != nil {
+			log.Printf("Failed to parse balance: %v", err)
+			continue
+		}
+		fmt.Printf("Balance: $%.2f\n", float64(balanceCents)/100)
+		fmt.Printf("Organization: %s\n", account.Org.Name)
 		fmt.Printf("Transactions: %d\n", len(account.Transactions))
 
 		// Process recent transactions
@@ -54,13 +62,19 @@ func ExampleClient_GetAccounts() {
 			if i >= 3 { // Show only first 3 transactions
 				break
 			}
+			
+			// Parse amount from string
+			amountCents, err := simplefin.ParseAmountToCents(txn.Amount)
+			if err != nil {
+				log.Printf("Failed to parse transaction amount: %v", err)
+				continue
+			}
+			
+			// Convert unix timestamp to readable format
+			postedDate := simplefin.UnixTimestampToISO(txn.Posted)
+			
 			fmt.Printf("  %s: $%.2f - %s\n", 
-				txn.Posted, float64(txn.Amount)/100, txn.Description)
+				postedDate, float64(amountCents)/100, txn.Description)
 		}
-	}
-
-	// Process organizations
-	for _, org := range response.Organizations {
-		fmt.Printf("Organization: %s\n", org.Name)
 	}
 }

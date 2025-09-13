@@ -93,19 +93,25 @@ func initCommand(cmd *Z.Cmd, args ...string) error {
 		return fmt.Errorf("failed to test connection - credentials may be invalid: %w", err)
 	}
 
+	// Extract organizations from accounts since they're now embedded
+	orgMap := make(map[string]simplefin.Organization)
+	for _, account := range accounts.Accounts {
+		orgMap[account.Org.ID] = account.Org
+	}
+
 	// Confirm successful setup
 	fmt.Println()
 	fmt.Println("✅ Setup completed successfully!")
 	fmt.Printf("Found %d organizations with %d total accounts\n", 
-		len(accounts.Organizations), len(accounts.Accounts))
+		len(orgMap), len(accounts.Accounts))
 	
-	if len(accounts.Organizations) > 0 {
+	if len(orgMap) > 0 {
 		fmt.Println()
 		fmt.Println("Connected organizations:")
-		for _, org := range accounts.Organizations {
+		for _, org := range orgMap {
 			accountCount := 0
 			for _, account := range accounts.Accounts {
-				if account.OrgID == org.ID {
+				if account.Org.ID == org.ID {
 					accountCount++
 				}
 			}

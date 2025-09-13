@@ -2,6 +2,7 @@ package simplefin
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -54,8 +55,9 @@ func TestExchangeToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create setup token URL pointing to our test server
-	setupToken := fmt.Sprintf("%s/claim/test-token-123", server.URL)
+	// Create setup token as base64 encoded URL pointing to our test server
+	claimURL := fmt.Sprintf("%s/claim", server.URL)
+	setupToken := base64.StdEncoding.EncodeToString([]byte(claimURL))
 
 	client := &Client{httpClient: createTestHTTPClient()}
 	accessURL, username, password, err := client.ExchangeToken(setupToken)
@@ -80,7 +82,8 @@ func TestNewClientFromToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	setupToken := fmt.Sprintf("%s/claim/test-token-123", server.URL)
+	claimURL := fmt.Sprintf("%s/claim", server.URL)
+	setupToken := base64.StdEncoding.EncodeToString([]byte(claimURL))
 
 	// For testing, we need to create a client that uses test HTTP client
 	tempClient := &Client{httpClient: createTestHTTPClient()}
@@ -97,29 +100,26 @@ func TestNewClientFromToken(t *testing.T) {
 }
 
 func TestGetAccounts(t *testing.T) {
-	// Create test data
+	// Create test data with the new API structure
 	testResponse := AccountsResponse{
 		Accounts: []Account{
 			{
 				ID:       "acc1",
-				OrgID:    "org1",
 				Name:     "Test Checking",
 				Currency: "USD",
-				Balance:  150050, // $1500.50 in cents
+				Balance:  "1500.50", // Amount as string
+				Org: Organization{
+					ID:   "org1",
+					Name: "Test Bank",
+				},
 				Transactions: []Transaction{
 					{
 						ID:          "txn1",
-						Posted:      "2023-12-01T10:00:00Z",
-						Amount:      -2500, // -$25.00 in cents
+						Posted:      1609459200, // Unix timestamp for 2021-01-01T00:00:00Z
+						Amount:      "-25.00",   // Amount as string
 						Description: "Coffee Shop",
 					},
 				},
-			},
-		},
-		Organizations: []Organization{
-			{
-				ID:   "org1",
-				Name: "Test Bank",
 			},
 		},
 	}
@@ -159,13 +159,13 @@ func TestGetAccounts(t *testing.T) {
 		t.Errorf("Expected 1 account, got %d", len(accounts.Accounts))
 	}
 
-	if len(accounts.Organizations) != 1 {
-		t.Errorf("Expected 1 organization, got %d", len(accounts.Organizations))
+	account := accounts.Accounts[0]
+	if account.ID != "acc1" || account.Name != "Test Checking" || account.Balance != "1500.50" {
+		t.Errorf("Account data mismatch: %+v", account)
 	}
 
-	account := accounts.Accounts[0]
-	if account.ID != "acc1" || account.Name != "Test Checking" || account.Balance != 150050 {
-		t.Errorf("Account data mismatch: %+v", account)
+	if account.Org.ID != "org1" || account.Org.Name != "Test Bank" {
+		t.Errorf("Embedded organization data mismatch: %+v", account.Org)
 	}
 
 	if len(account.Transactions) != 1 {
@@ -173,8 +173,12 @@ func TestGetAccounts(t *testing.T) {
 	}
 
 	txn := account.Transactions[0]
-	if txn.ID != "txn1" || txn.Amount != -2500 || txn.Description != "Coffee Shop" {
+	if txn.ID != "txn1" || txn.Amount != "-25.00" || txn.Description != "Coffee Shop" {
 		t.Errorf("Transaction data mismatch: %+v", txn)
+	}
+
+	if txn.Posted != 1609459200 {
+		t.Errorf("Transaction posted timestamp mismatch: expected 1609459200, got %d", txn.Posted)
 	}
 }
 
@@ -200,15 +204,67 @@ func TestExchangeTokenInvalidURL(t *testing.T) {
 	}
 }
 
-func TestExchangeTokenInvalidFormat(t *testing.T) {
+func TestExchangeTokenInvalidBase64(t *testing.T) {
 	client := &Client{}
 	client.SetHTTPClient(createTestHTTPClient())
-	_, _, _, err := client.ExchangeToken("https://example.com/invalid/path")
+	_, _, _, err := client.ExchangeToken("not-valid-base64!")
 	if err == nil {
-		t.Error("Expected error for invalid token format")
+		t.Error("Expected error for invalid base64")
 	}
 
-	if !strings.Contains(err.Error(), "invalid setup token format") {
-		t.Errorf("Expected 'invalid setup token format' error, got: %v", err)
+	if !strings.Contains(err.Error(), "invalid setup token") {
+		t.Errorf("Expected 'invalid setup token' error, got: %v", err)
+	}
+}
+
+func TestParseAmountToCents(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected int
+		hasError bool
+	}{
+		{"123.45", 12345, false},
+		{"0.99", 99, false},
+		{"1000.00", 100000, false},
+		{"-25.50", -2550, false},
+		{"0", 0, false},
+		{"", 0, false},
+		{"invalid", 0, true},
+		{"123.456", 12346, false}, // Should round to nearest cent
+	}
+
+	for _, tc := range testCases {
+		result, err := ParseAmountToCents(tc.input)
+		
+		if tc.hasError {
+			if err == nil {
+				t.Errorf("Expected error for input '%s', but got none", tc.input)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("Unexpected error for input '%s': %v", tc.input, err)
+			}
+			if result != tc.expected {
+				t.Errorf("For input '%s', expected %d cents, got %d", tc.input, tc.expected, result)
+			}
+		}
+	}
+}
+
+func TestUnixTimestampToISO(t *testing.T) {
+	testCases := []struct {
+		input    int64
+		expected string
+	}{
+		{1609459200, "2021-01-01T00:00:00Z"}, // Jan 1, 2021 midnight UTC
+		{0, ""},                              // Zero timestamp should return empty string
+		{1640995200, "2022-01-01T00:00:00Z"}, // Jan 1, 2022 midnight UTC
+	}
+
+	for _, tc := range testCases {
+		result := UnixTimestampToISO(tc.input)
+		if result != tc.expected {
+			t.Errorf("For input %d, expected '%s', got '%s'", tc.input, tc.expected, result)
+		}
 	}
 }

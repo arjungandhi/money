@@ -42,9 +42,15 @@ var Fetch = &Z.Cmd{
 		var stats syncStats
 		stats.startTime = time.Now()
 
-		// 4. Process and store organizations
-		fmt.Printf("Processing %d organizations...\n", len(accountsData.Organizations))
-		for _, org := range accountsData.Organizations {
+		// 4. Extract and store organizations from accounts
+		// Since organizations are now embedded in accounts, we need to collect unique organizations
+		orgMap := make(map[string]simplefin.Organization)
+		for _, account := range accountsData.Accounts {
+			orgMap[account.Org.ID] = account.Org
+		}
+
+		fmt.Printf("Processing %d organizations...\n", len(orgMap))
+		for _, org := range orgMap {
 			url := ""
 			if org.URL != nil {
 				url = *org.URL
@@ -59,18 +65,35 @@ var Fetch = &Z.Cmd{
 		// 5. Process and store accounts
 		fmt.Printf("Processing %d accounts...\n", len(accountsData.Accounts))
 		for _, account := range accountsData.Accounts {
+			// Convert string balance to cents
+			balance, err := simplefin.ParseAmountToCents(account.Balance)
+			if err != nil {
+				return fmt.Errorf("failed to parse balance for account %s: %w", account.Name, err)
+			}
+
+			// Convert available balance if present
+			var availableBalance *int
+			if account.AvailableBalance != nil {
+				availBalCents, err := simplefin.ParseAmountToCents(*account.AvailableBalance)
+				if err != nil {
+					return fmt.Errorf("failed to parse available balance for account %s: %w", account.Name, err)
+				}
+				availableBalance = &availBalCents
+			}
+
+			// Convert unix timestamp to ISO string if present
 			balanceDate := ""
 			if account.BalanceDate != nil {
-				balanceDate = *account.BalanceDate
+				balanceDate = simplefin.UnixTimestampToISO(*account.BalanceDate)
 			}
 
 			if err := db.SaveAccount(
 				account.ID,
-				account.OrgID,
+				account.Org.ID, // Use embedded organization ID
 				account.Name,
 				account.Currency,
-				account.Balance,
-				account.AvailableBalance,
+				balance,
+				availableBalance,
 				balanceDate,
 			); err != nil {
 				return fmt.Errorf("failed to save account %s: %w", account.Name, err)
@@ -88,6 +111,15 @@ var Fetch = &Z.Cmd{
 					return fmt.Errorf("failed to check transaction existence: %w", err)
 				}
 
+				// Convert string amount to cents
+				amount, err := simplefin.ParseAmountToCents(transaction.Amount)
+				if err != nil {
+					return fmt.Errorf("failed to parse amount for transaction %s: %w", transaction.ID, err)
+				}
+
+				// Convert unix timestamp to ISO string
+				postedDate := simplefin.UnixTimestampToISO(transaction.Posted)
+
 				pending := false
 				if transaction.Pending != nil {
 					pending = *transaction.Pending
@@ -96,8 +128,8 @@ var Fetch = &Z.Cmd{
 				if err := db.SaveTransaction(
 					transaction.ID,
 					account.ID,
-					transaction.Posted,
-					transaction.Amount,
+					postedDate,
+					amount,
 					transaction.Description,
 					pending,
 				); err != nil {
