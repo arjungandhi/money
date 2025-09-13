@@ -20,33 +20,33 @@ type DB struct {
 func New() (*DB, error) {
 	// 1. Get MONEY_DIR from env (default: $HOME/.money)
 	moneyDir := getMoneyDir()
-	
+
 	// 2. Create directory if it doesn't exist
 	if err := os.MkdirAll(moneyDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create money directory: %w", err)
 	}
-	
+
 	// 3. Open SQLite connection
 	dbPath := filepath.Join(moneyDir, "money.db")
 	conn, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	
+
 	// Test the connection
 	if err := conn.Ping(); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-	
+
 	db := &DB{conn: conn}
-	
+
 	// 4. Run schema migrations
 	if err := db.runMigrations(); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
-	
+
 	return db, nil
 }
 
@@ -64,7 +64,7 @@ func (db *DB) runMigrations() error {
 	if err != nil {
 		return fmt.Errorf("failed to check existing tables: %w", err)
 	}
-	
+
 	// Only run migrations if no tables exist (fresh database)
 	if tableCount == 0 {
 		_, err = db.conn.Exec(schemaSQL)
@@ -72,7 +72,7 @@ func (db *DB) runMigrations() error {
 			return fmt.Errorf("failed to execute schema: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -147,12 +147,12 @@ func (db *DB) GetCategories() ([]Category, error) {
 // Data types
 type Account struct {
 	ID               string
-	OrgID           string
-	Name            string
-	Currency        string
-	Balance         int
+	OrgID            string
+	Name             string
+	Currency         string
+	Balance          int
 	AvailableBalance *int
-	BalanceDate     *string
+	BalanceDate      *string
 }
 
 type Transaction struct {

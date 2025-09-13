@@ -2,10 +2,10 @@ package cli
 
 import (
 	"fmt"
-	
+
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
-	
+
 	"github.com/arjungandhi/money/pkg/database"
 )
 
@@ -27,13 +27,13 @@ var Categorize = &Z.Cmd{
 		// 2. Use LLM to suggest categories for each transaction
 		// 3. Present interactive prompts for category review and adjustment
 		// 4. Save category assignments back to database
-		
+
 		db, err := database.New()
 		if err != nil {
 			return err
 		}
 		defer db.Close()
-		
+
 		// Placeholder implementation
 		fmt.Println("TODO: Implement transactions categorize command")
 		return nil
