@@ -86,13 +86,54 @@ func getMoneyDir() string {
 
 // Credential methods
 func (db *DB) SaveCredentials(accessURL, username, password string) error {
-	// TODO: Save SimpleFIN credentials
+	// Delete any existing credentials (only one set allowed)
+	_, err := db.conn.Exec("DELETE FROM credentials")
+	if err != nil {
+		return fmt.Errorf("failed to clear existing credentials: %w", err)
+	}
+
+	// Insert new credentials
+	_, err = db.conn.Exec(`
+		INSERT INTO credentials (access_url, username, password, last_used) 
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+		accessURL, username, password)
+	if err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
 	return nil
 }
 
 func (db *DB) GetCredentials() (accessURL, username, password string, err error) {
-	// TODO: Retrieve stored credentials
-	return "", "", "", nil
+	err = db.conn.QueryRow(`
+		SELECT access_url, username, password 
+		FROM credentials 
+		ORDER BY created_at DESC 
+		LIMIT 1`).Scan(&accessURL, &username, &password)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", "", fmt.Errorf("no credentials found - run 'money init' first")
+		}
+		return "", "", "", fmt.Errorf("failed to retrieve credentials: %w", err)
+	}
+
+	// Update last_used timestamp
+	_, updateErr := db.conn.Exec("UPDATE credentials SET last_used = CURRENT_TIMESTAMP WHERE access_url = ?", accessURL)
+	if updateErr != nil {
+		// Log warning but don't fail the operation
+		fmt.Printf("Warning: failed to update last_used timestamp: %v\n", updateErr)
+	}
+
+	return accessURL, username, password, nil
+}
+
+func (db *DB) HasCredentials() (bool, error) {
+	var count int
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM credentials").Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check credentials: %w", err)
+	}
+	return count > 0, nil
 }
 
 // Organization methods

@@ -102,3 +102,98 @@ func TestGetMoneyDir(t *testing.T) {
 		t.Errorf("Expected %s, got %s", expected, dir)
 	}
 }
+
+func TestCredentials(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Set MONEY_DIR environment variable to temp directory
+	oldMoneyDir := os.Getenv("MONEY_DIR")
+	os.Setenv("MONEY_DIR", tempDir)
+	defer os.Setenv("MONEY_DIR", oldMoneyDir)
+
+	// Initialize database
+	db, err := New()
+	if err != nil {
+		t.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	// Test HasCredentials on empty database
+	hasCredentials, err := db.HasCredentials()
+	if err != nil {
+		t.Errorf("Failed to check credentials: %v", err)
+	}
+	if hasCredentials {
+		t.Error("Expected no credentials in empty database")
+	}
+
+	// Test SaveCredentials
+	testAccessURL := "https://example.com/api"
+	testUsername := "testuser"
+	testPassword := "testpass"
+
+	err = db.SaveCredentials(testAccessURL, testUsername, testPassword)
+	if err != nil {
+		t.Errorf("Failed to save credentials: %v", err)
+	}
+
+	// Test HasCredentials after saving
+	hasCredentials, err = db.HasCredentials()
+	if err != nil {
+		t.Errorf("Failed to check credentials: %v", err)
+	}
+	if !hasCredentials {
+		t.Error("Expected credentials to be present after saving")
+	}
+
+	// Test GetCredentials
+	accessURL, username, password, err := db.GetCredentials()
+	if err != nil {
+		t.Errorf("Failed to get credentials: %v", err)
+	}
+	if accessURL != testAccessURL {
+		t.Errorf("Expected access URL %s, got %s", testAccessURL, accessURL)
+	}
+	if username != testUsername {
+		t.Errorf("Expected username %s, got %s", testUsername, username)
+	}
+	if password != testPassword {
+		t.Errorf("Expected password %s, got %s", testPassword, password)
+	}
+
+	// Test overwriting credentials
+	newAccessURL := "https://new.example.com/api"
+	newUsername := "newuser"
+	newPassword := "newpass"
+
+	err = db.SaveCredentials(newAccessURL, newUsername, newPassword)
+	if err != nil {
+		t.Errorf("Failed to save new credentials: %v", err)
+	}
+
+	// Verify old credentials are replaced
+	accessURL, username, password, err = db.GetCredentials()
+	if err != nil {
+		t.Errorf("Failed to get updated credentials: %v", err)
+	}
+	if accessURL != newAccessURL {
+		t.Errorf("Expected new access URL %s, got %s", newAccessURL, accessURL)
+	}
+	if username != newUsername {
+		t.Errorf("Expected new username %s, got %s", newUsername, username)
+	}
+	if password != newPassword {
+		t.Errorf("Expected new password %s, got %s", newPassword, password)
+	}
+
+	// Verify only one set of credentials exists
+	var count int
+	err = db.conn.QueryRow("SELECT COUNT(*) FROM credentials").Scan(&count)
+	if err != nil {
+		t.Errorf("Failed to count credentials: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 set of credentials after overwrite, got %d", count)
+	}
+}
