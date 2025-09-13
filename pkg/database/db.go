@@ -1,0 +1,128 @@
+package database
+
+import (
+	"database/sql"
+	"os"
+	"path/filepath"
+
+	_ "modernc.org/sqlite"
+)
+
+type DB struct {
+	conn *sql.DB
+}
+
+func New() (*DB, error) {
+	// TODO: Implement database initialization
+	// 1. Get MONEY_DIR from env (default: $HOME/.money)
+	// 2. Create directory if it doesn't exist
+	// 3. Open SQLite connection
+	// 4. Run schema migrations
+	return nil, nil
+}
+
+func (db *DB) Close() error {
+	// TODO: Close database connection
+	return nil
+}
+
+func getMoneyDir() string {
+	if dir := os.Getenv("MONEY_DIR"); dir != "" {
+		return dir
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".money")
+}
+
+// Credential methods
+func (db *DB) SaveCredentials(accessURL, username, password string) error {
+	// TODO: Save SimpleFIN credentials
+	return nil
+}
+
+func (db *DB) GetCredentials() (accessURL, username, password string, err error) {
+	// TODO: Retrieve stored credentials
+	return "", "", "", nil
+}
+
+// Organization methods
+func (db *DB) SaveOrganization(id, name, url string) error {
+	// TODO: Save organization data
+	return nil
+}
+
+// Account methods
+func (db *DB) SaveAccount(id, orgID, name, currency string, balance, availableBalance int, balanceDate string) error {
+	// TODO: Save account data
+	return nil
+}
+
+func (db *DB) GetAccounts() ([]Account, error) {
+	// TODO: Retrieve all accounts
+	return nil, nil
+}
+
+// Transaction methods
+func (db *DB) SaveTransaction(id, accountID, posted string, amount int, description string, pending bool) error {
+	// TODO: Save transaction data
+	return nil
+}
+
+func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Transaction, error) {
+	// TODO: Retrieve transactions for account in date range
+	return nil, nil
+}
+
+func (db *DB) GetUncategorizedTransactions() ([]Transaction, error) {
+	// TODO: Retrieve transactions without category assignments
+	return nil, nil
+}
+
+func (db *DB) UpdateTransactionCategory(transactionID string, categoryID int) error {
+	// TODO: Update transaction with category assignment
+	return nil
+}
+
+// Category methods
+func (db *DB) SaveCategory(name, categoryType string) (int, error) {
+	// TODO: Save category and return ID
+	return 0, nil
+}
+
+func (db *DB) GetCategories() ([]Category, error) {
+	// TODO: Retrieve all categories
+	return nil, nil
+}
+
+// Data types
+type Account struct {
+	ID               string
+	OrgID           string
+	Name            string
+	Currency        string
+	Balance         int
+	AvailableBalance *int
+	BalanceDate     *string
+}
+
+type Transaction struct {
+	ID          string
+	AccountID   string
+	Posted      string
+	Amount      int
+	Description string
+	Pending     bool
+	CategoryID  *int
+}
+
+type Organization struct {
+	ID   string
+	Name string
+	URL  *string
+}
+
+type Category struct {
+	ID   int
+	Name string
+	Type string
+}

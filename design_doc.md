@@ -14,16 +14,23 @@
 - `money balance`: shows the current balance of all accounts + net worth
 - `money costs`: shows a breakdown of all costs by category for a given time period (default this month)
 - `money income`: shows a breakdown of all income by category for a given time period (default this month)
+- `money transactions categorize`: interactively categorize uncategorized transactions via llm. 
+    - transactions when fetched from simplefin are uncategorized
+    - user can run this command to use a llm to categorize them 
+    - user can review and adjust categories as needed
 
 # Tech Stack
 1. language: Go
 2. cli library: github.com/rwxrob/bonzai v0.20.10:
    - Main executable in `cmd/money/main.go` that calls `cli.Cmd.Run()`
    - Root command defined in `cmd/money/cli/money.go` with Name, Summary, and Commands slice
-   - Each subcommand (init, fetch, balance, costs, income) gets its own file in cli/ package
+   - Each subcommand (init, fetch, balance, costs, income, transactions) gets its own file in cli/ package
    - Commands structured as `&Z.Cmd{}` with Name, Summary, Call function, and optional sub-Commands
    - Use `Z "github.com/rwxrob/bonzai/z"` import alias pattern
 3. storage: SQLite (local file-based database), dir for storage configured via the MONEY_DIR env var, defaults to $HOME/.money
+4. LLM integration: For transaction categorization via `money categorize` command
+   - API service for LLM calls (OpenAI/Anthropic/local model TBD)
+   - Interactive prompting for category review and adjustment
 
 # Database Schema
 
@@ -60,6 +67,14 @@ CREATE TABLE accounts (
     FOREIGN KEY (org_id) REFERENCES organizations(id)
 );
 
+-- Categories for transaction classification
+CREATE TABLE categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Transactions
 CREATE TABLE transactions (
     id TEXT PRIMARY KEY,  -- SimpleFIN transaction ID
@@ -68,12 +83,16 @@ CREATE TABLE transactions (
     amount INTEGER NOT NULL,  -- Store as cents
     description TEXT NOT NULL,
     pending BOOLEAN DEFAULT FALSE,
+    category_id INTEGER,  -- NULL for uncategorized transactions
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (account_id) REFERENCES accounts(id)
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id),
+    FOREIGN KEY (category_id) REFERENCES categories(id)
 );
 
 -- Indexes for performance
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_posted ON transactions(posted);
+CREATE INDEX idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX idx_accounts_org_id ON accounts(org_id);
 ```
