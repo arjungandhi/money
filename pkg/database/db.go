@@ -149,6 +149,42 @@ func (db *DB) SaveOrganization(id, name, url string) error {
 	return nil
 }
 
+func (db *DB) GetOrganizations() ([]Organization, error) {
+	query := `
+		SELECT id, name, url
+		FROM organizations
+		ORDER BY name`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query organizations: %w", err)
+	}
+	defer rows.Close()
+
+	var orgs []Organization
+	for rows.Next() {
+		var org Organization
+		var url sql.NullString
+
+		err := rows.Scan(&org.ID, &org.Name, &url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan organization: %w", err)
+		}
+
+		if url.Valid {
+			org.URL = &url.String
+		}
+
+		orgs = append(orgs, org)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating organizations: %w", err)
+	}
+
+	return orgs, nil
+}
+
 // Account methods
 func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availableBalance *int, balanceDate string) error {
 	// Use INSERT OR REPLACE to handle both new and existing accounts
@@ -170,8 +206,53 @@ func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availab
 }
 
 func (db *DB) GetAccounts() ([]Account, error) {
-	// TODO: Retrieve all accounts
-	return nil, nil
+	query := `
+		SELECT a.id, a.org_id, a.name, a.currency, a.balance, a.available_balance, a.balance_date
+		FROM accounts a
+		ORDER BY a.org_id, a.name`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []Account
+	for rows.Next() {
+		var account Account
+		var availableBalance sql.NullInt64
+		var balanceDate sql.NullString
+
+		err := rows.Scan(
+			&account.ID,
+			&account.OrgID,
+			&account.Name,
+			&account.Currency,
+			&account.Balance,
+			&availableBalance,
+			&balanceDate,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan account: %w", err)
+		}
+
+		// Handle nullable fields
+		if availableBalance.Valid {
+			balance := int(availableBalance.Int64)
+			account.AvailableBalance = &balance
+		}
+		if balanceDate.Valid {
+			account.BalanceDate = &balanceDate.String
+		}
+
+		accounts = append(accounts, account)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating accounts: %w", err)
+	}
+
+	return accounts, nil
 }
 
 // Transaction methods
