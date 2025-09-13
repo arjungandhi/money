@@ -67,10 +67,7 @@ func initCommand(cmd *Z.Cmd, args ...string) error {
 		return fmt.Errorf("failed to get setup token: %w", err)
 	}
 
-	// Validate token format
-	if err := validateSetupToken(setupToken); err != nil {
-		return fmt.Errorf("invalid setup token: %w", err)
-	}
+	// No validation needed - let SimpleFIN client handle it
 
 	fmt.Println("Exchanging setup token for permanent credentials...")
 
@@ -139,9 +136,8 @@ func confirmOverwrite() bool {
 }
 
 func promptForSetupToken() (string, error) {
-	fmt.Println("Please enter your SimpleFIN setup token.")
-	fmt.Println("This should be a URL starting with https://")
-	fmt.Println("Example: https://bridge.simplefin.org/simplefin/claim/abc123...")
+	fmt.Println("Please enter your SimpleFIN setup token (base64 encoded):")
+	fmt.Println("Example: aHR0cHM6Ly9icmlkZ2Uuc2ltcGxlZmluLm9yZy9zaW1wbGVmaW4vY2xhaW0vYWJjMTIz")
 	fmt.Println()
 	fmt.Print("Setup token: ")
 
@@ -159,20 +155,3 @@ func promptForSetupToken() (string, error) {
 	return token, nil
 }
 
-func validateSetupToken(token string) error {
-	if !strings.HasPrefix(token, "https://") && !strings.HasPrefix(token, "http://") {
-		return fmt.Errorf("setup token must be a URL starting with https://")
-	}
-
-	if !strings.Contains(token, "/claim/") {
-		return fmt.Errorf("setup token must contain '/claim/' path")
-	}
-
-	// Basic validation - the simplefin package will do more thorough validation
-	parts := strings.Split(token, "/claim/")
-	if len(parts) != 2 || parts[1] == "" {
-		return fmt.Errorf("setup token format invalid - missing claim token")
-	}
-
-	return nil
-}

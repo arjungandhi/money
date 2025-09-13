@@ -55,19 +55,13 @@ func createHTTPClient() *http.Client {
 }
 
 func (c *Client) ExchangeToken(setupToken string) (accessURL, username, password string, err error) {
-	var claimURL string
-	
-	// Try to parse as URL first (direct format)
-	if strings.HasPrefix(setupToken, "http://") || strings.HasPrefix(setupToken, "https://") {
-		claimURL = setupToken
-	} else {
-		// Try base64 decoding (encoded format)
-		claimURLBytes, err := base64.StdEncoding.DecodeString(setupToken)
-		if err != nil {
-			return "", "", "", fmt.Errorf("invalid setup token: not a URL and failed to decode as base64: %w", err)
-		}
-		claimURL = string(claimURLBytes)
+	// Decode the base64 setup token to get the claim URL
+	claimURLBytes, err := base64.StdEncoding.DecodeString(setupToken)
+	if err != nil {
+		return "", "", "", fmt.Errorf("invalid setup token: failed to decode base64: %w", err)
 	}
+	
+	claimURL := string(claimURLBytes)
 	
 	// Validate that the claim URL is valid
 	_, err = url.Parse(claimURL)
