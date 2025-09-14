@@ -174,6 +174,28 @@ func (db *DB) runIncrementalMigrations() error {
 		}
 	}
 
+	// Check if nickname column exists in accounts table
+	var nicknameColumnExists int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM pragma_table_info('accounts')
+		WHERE name = 'nickname'
+	`).Scan(&nicknameColumnExists)
+	if err != nil {
+		return fmt.Errorf("failed to check nickname column: %w", err)
+	}
+
+	// Add nickname column if it doesn't exist
+	if nicknameColumnExists == 0 {
+		_, err = db.conn.Exec(`
+			ALTER TABLE accounts
+			ADD COLUMN nickname TEXT
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add nickname column: %w", err)
+		}
+	}
+
 	// Check if balance_history table exists
 	var tableExists int
 	err = db.conn.QueryRow(`
@@ -363,7 +385,7 @@ func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availab
 
 func (db *DB) GetAccounts() ([]Account, error) {
 	query := `
-		SELECT a.id, a.org_id, a.name, a.currency, a.balance, a.available_balance, a.balance_date, a.account_type
+		SELECT a.id, a.org_id, a.name, a.nickname, a.currency, a.balance, a.available_balance, a.balance_date, a.account_type
 		FROM accounts a
 		ORDER BY a.org_id, a.name`
 
@@ -376,6 +398,7 @@ func (db *DB) GetAccounts() ([]Account, error) {
 	var accounts []Account
 	for rows.Next() {
 		var account Account
+		var nickname sql.NullString
 		var availableBalance sql.NullInt64
 		var balanceDate sql.NullString
 		var accountType sql.NullString
@@ -384,6 +407,7 @@ func (db *DB) GetAccounts() ([]Account, error) {
 			&account.ID,
 			&account.OrgID,
 			&account.Name,
+			&nickname,
 			&account.Currency,
 			&account.Balance,
 			&availableBalance,
@@ -395,6 +419,9 @@ func (db *DB) GetAccounts() ([]Account, error) {
 		}
 
 		// Handle nullable fields
+		if nickname.Valid {
+			account.Nickname = &nickname.String
+		}
 		if availableBalance.Valid {
 			balance := int(availableBalance.Int64)
 			account.AvailableBalance = &balance
@@ -444,8 +471,8 @@ func (db *DB) SetAccountType(accountID, accountType string) error {
 
 func (db *DB) ClearAccountType(accountID string) error {
 	_, err := db.conn.Exec(`
-		UPDATE accounts 
-		SET account_type = NULL, updated_at = CURRENT_TIMESTAMP 
+		UPDATE accounts
+		SET account_type = NULL, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		accountID)
 	if err != nil {
@@ -454,13 +481,39 @@ func (db *DB) ClearAccountType(accountID string) error {
 	return nil
 }
 
+// Account nickname methods
+func (db *DB) SetAccountNickname(accountID, nickname string) error {
+	_, err := db.conn.Exec(`
+		UPDATE accounts
+		SET nickname = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		nickname, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to set account nickname: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) ClearAccountNickname(accountID string) error {
+	_, err := db.conn.Exec(`
+		UPDATE accounts
+		SET nickname = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		accountID)
+	if err != nil {
+		return fmt.Errorf("failed to clear account nickname: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) GetAccountByID(accountID string) (*Account, error) {
 	query := `
-		SELECT a.id, a.org_id, a.name, a.currency, a.balance, a.available_balance, a.balance_date, a.account_type
+		SELECT a.id, a.org_id, a.name, a.nickname, a.currency, a.balance, a.available_balance, a.balance_date, a.account_type
 		FROM accounts a
 		WHERE a.id = ?`
 
 	var account Account
+	var nickname sql.NullString
 	var availableBalance sql.NullInt64
 	var balanceDate sql.NullString
 	var accountType sql.NullString
@@ -469,6 +522,7 @@ func (db *DB) GetAccountByID(accountID string) (*Account, error) {
 		&account.ID,
 		&account.OrgID,
 		&account.Name,
+		&nickname,
 		&account.Currency,
 		&account.Balance,
 		&availableBalance,
@@ -483,6 +537,9 @@ func (db *DB) GetAccountByID(accountID string) (*Account, error) {
 	}
 
 	// Handle nullable fields
+	if nickname.Valid {
+		account.Nickname = &nickname.String
+	}
 	if availableBalance.Valid {
 		balance := int(availableBalance.Int64)
 		account.AvailableBalance = &balance
@@ -915,11 +972,20 @@ type Account struct {
 	ID               string
 	OrgID            string
 	Name             string
+	Nickname         *string
 	Currency         string
 	Balance          int
 	AvailableBalance *int
 	BalanceDate      *string
 	AccountType      *string
+}
+
+// DisplayName returns the nickname if set, otherwise returns the original name
+func (a *Account) DisplayName() string {
+	if a.Nickname != nil && *a.Nickname != "" {
+		return *a.Nickname
+	}
+	return a.Name
 }
 
 type BalanceHistory struct {

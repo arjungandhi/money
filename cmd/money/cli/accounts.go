@@ -17,6 +17,7 @@ var Accounts = &Z.Cmd{
 		help.Cmd,
 		AccountsList,
 		AccountsType,
+		AccountsNickname,
 	},
 }
 
@@ -27,6 +28,16 @@ var AccountsType = &Z.Cmd{
 		help.Cmd,
 		AccountsTypeSet,
 		AccountsTypeClear,
+	},
+}
+
+var AccountsNickname = &Z.Cmd{
+	Name:    "nickname",
+	Summary: "Manage custom account nicknames",
+	Commands: []*Z.Cmd{
+		help.Cmd,
+		AccountsNicknameSet,
+		AccountsNicknameClear,
 	},
 }
 
@@ -79,15 +90,18 @@ var AccountsList = &Z.Cmd{
 				orgName = org.Name
 			}
 
+			// Use DisplayName method to get nickname or original name
+			displayName := account.DisplayName()
+
 			// Truncate long names for better display
 			if len(orgName) > 25 {
 				orgName = orgName[:22] + "..."
 			}
-			if len(account.Name) > 30 {
-				account.Name = account.Name[:27] + "..."
+			if len(displayName) > 30 {
+				displayName = displayName[:27] + "..."
 			}
 
-			fmt.Printf("%-12s %-25s %-30s %s\n", accountType, orgName, account.Name, account.ID)
+			fmt.Printf("%-12s %-25s %-30s %s\n", accountType, orgName, displayName, account.ID)
 		}
 
 		fmt.Println()
@@ -179,6 +193,80 @@ var AccountsTypeClear = &Z.Cmd{
 		}
 
 		fmt.Printf("Successfully cleared account type for account: %s (%s)\n", account.Name, accountID)
+
+		return nil
+	},
+}
+
+var AccountsNicknameSet = &Z.Cmd{
+	Name:     "set",
+	Summary:  "Set a custom nickname for an account",
+	Usage:    "<account-id> <nickname>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) < 2 {
+			return fmt.Errorf("usage: %s <account-id> <nickname>", cmd.Usage)
+		}
+
+		accountID := args[0]
+		// Join remaining args as nickname to support multi-word nicknames
+		nickname := strings.Join(args[1:], " ")
+
+		db, err := database.New()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		// Check if account exists
+		account, err := db.GetAccountByID(accountID)
+		if err != nil {
+			return err
+		}
+
+		// Set the account nickname
+		err = db.SetAccountNickname(accountID, nickname)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Successfully set nickname '%s' for account: %s (%s)\n", nickname, account.Name, accountID)
+
+		return nil
+	},
+}
+
+var AccountsNicknameClear = &Z.Cmd{
+	Name:     "clear",
+	Summary:  "Remove custom nickname for an account (revert to original name)",
+	Usage:    "<account-id>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) != 1 {
+			return fmt.Errorf("usage: %s <account-id>", cmd.Usage)
+		}
+
+		accountID := args[0]
+
+		db, err := database.New()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		// Check if account exists
+		account, err := db.GetAccountByID(accountID)
+		if err != nil {
+			return err
+		}
+
+		// Clear the account nickname
+		err = db.ClearAccountNickname(accountID)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Successfully cleared nickname for account: %s (%s)\n", account.Name, accountID)
 
 		return nil
 	},

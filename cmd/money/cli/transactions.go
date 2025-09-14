@@ -129,10 +129,10 @@ var TransactionsList = &Z.Cmd{
 			return fmt.Errorf("failed to get accounts: %w", err)
 		}
 
-		// Create account ID to name mapping
+		// Create account ID to display name mapping
 		accountMap := make(map[string]string)
 		for _, account := range accounts {
-			accountMap[account.ID] = account.Name
+			accountMap[account.ID] = account.DisplayName()
 		}
 
 		// Display transactions

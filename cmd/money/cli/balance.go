@@ -121,7 +121,7 @@ var Balance = &Z.Cmd{
 			}
 
 			fmt.Fprintf(w, "%s %s\t%s\t%s\t%s\n",
-				typeIcon, strings.Title(accountType), institutionName, account.Name, balanceStr)
+				typeIcon, strings.Title(accountType), institutionName, account.DisplayName(), balanceStr)
 			totalNetWorth += int64(account.Balance)
 		}
 

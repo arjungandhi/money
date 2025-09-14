@@ -21,6 +21,8 @@
   - `money accounts type set <account-id> <type>`: set account type for better balance organization
     - Valid types: checking, savings, credit, investment, loan, other
   - `money accounts type clear <account-id>`: clear account type (set to unset)
+  - `money accounts nickname set <account-id> <nickname>`: set a custom nickname for an account
+  - `money accounts nickname clear <account-id>`: remove custom nickname (revert to original name)
 - `money costs`: shows a breakdown of all costs by category for a given time period (default this month)
 - `money income`: shows a breakdown of all income by category for a given time period (default this month)
 - `money transactions`: manage and view transactions 
@@ -78,6 +80,7 @@ CREATE TABLE accounts (
     id TEXT PRIMARY KEY,  -- SimpleFIN account ID
     org_id TEXT NOT NULL,
     name TEXT NOT NULL,
+    nickname TEXT,  -- Custom user-defined nickname for the account
     currency TEXT NOT NULL DEFAULT 'USD',
     balance INTEGER NOT NULL,  -- Store as cents to avoid floating point issues
     available_balance INTEGER,
