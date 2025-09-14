@@ -874,6 +874,28 @@ func (db *DB) MarkTransactionAsTransfer(transactionID string) error {
 	return nil
 }
 
+func (db *DB) ClearTransferFlag(transactionID string) error {
+	result, err := db.conn.Exec(`
+		UPDATE transactions
+		SET is_transfer = FALSE, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		transactionID)
+	if err != nil {
+		return fmt.Errorf("failed to clear transfer flag: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("transaction not found: %s", transactionID)
+	}
+
+	return nil
+}
+
 // Balance History methods
 func (db *DB) SaveBalanceHistory(accountID string, balance int, availableBalance *int) error {
 	var availableBalanceVal sql.NullInt64
