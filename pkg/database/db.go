@@ -18,22 +18,17 @@ type DB struct {
 }
 
 func New() (*DB, error) {
-	// 1. Get MONEY_DIR from env (default: $HOME/.money)
 	moneyDir := getMoneyDir()
 
-	// 2. Create directory if it doesn't exist
 	if err := os.MkdirAll(moneyDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create money directory: %w", err)
 	}
-
-	// 3. Open SQLite connection
 	dbPath := filepath.Join(moneyDir, "money.db")
 	conn, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Test the connection
 	if err := conn.Ping(); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
@@ -41,7 +36,6 @@ func New() (*DB, error) {
 
 	db := &DB{conn: conn}
 
-	// 4. Run schema migrations
 	if err := db.runMigrations(); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
@@ -58,21 +52,18 @@ func (db *DB) Close() error {
 }
 
 func (db *DB) runMigrations() error {
-	// Check if tables already exist by querying sqlite_master
 	var tableCount int
 	err := db.conn.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").Scan(&tableCount)
 	if err != nil {
 		return fmt.Errorf("failed to check existing tables: %w", err)
 	}
 
-	// Only run migrations if no tables exist (fresh database)
 	if tableCount == 0 {
 		_, err = db.conn.Exec(schemaSQL)
 		if err != nil {
 			return fmt.Errorf("failed to execute schema: %w", err)
 		}
 	} else {
-		// Run incremental migrations for existing databases
 		err = db.runIncrementalMigrations()
 		if err != nil {
 			return fmt.Errorf("failed to run incremental migrations: %w", err)

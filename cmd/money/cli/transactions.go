@@ -503,7 +503,7 @@ func autoCategorizeTransactions() error {
 		}
 		fmt.Print(cat.Name)
 	}
-	fmt.Println("\n")
+	fmt.Println()
 
 	// Initialize LLM client
 	llmClient := llm.NewClient()
@@ -696,7 +696,7 @@ func recategorizeAllTransactions() error {
 		}
 		fmt.Print(cat.Name)
 	}
-	fmt.Println("\n")
+	fmt.Println()
 
 	// Initialize LLM client
 	llmClient := llm.NewClient()

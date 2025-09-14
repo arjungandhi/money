@@ -33,46 +33,39 @@ Examples:
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		fmt.Println("Fetching data from SimpleFIN...")
 
-		// Parse flags - default to fetching ALL transactions
-		days := 30        // Only used if --days is specified
-		fetchAll := true  // Default to fetching all transactions
-
-		// Override default if specific flags are provided
+		days := 30
+		fetchAll := true
 		for i, arg := range args {
 			switch {
 			case (arg == "--days" || arg == "-d") && i+1 < len(args):
 				if parsedDays, err := strconv.Atoi(args[i+1]); err == nil && parsedDays > 0 {
 					days = parsedDays
-					fetchAll = false // Switch to days mode when --days is specified
+					fetchAll = false
 				}
 			case arg == "--all" || arg == "-a":
 				fetchAll = true
 			}
 		}
 
-		// 1. Initialize database connection
 		db, err := database.New()
 		if err != nil {
 			return fmt.Errorf("failed to initialize database: %w", err)
 		}
 		defer db.Close()
 
-		// 2. Load stored credentials
 		accessURL, username, password, err := db.GetCredentials()
 		if err != nil {
 			return fmt.Errorf("failed to load credentials: %w", err)
 		}
 
-		// 3. Create SimpleFIN client and fetch data
 		client := simplefin.NewClient(accessURL, username, password)
 
 		fmt.Println("Connecting to SimpleFIN API...")
 
-		// Set up options based on arguments
 		var options *simplefin.AccountsOptions
 		if fetchAll {
 			fmt.Println("Fetching complete transaction history...")
-			options = nil // No date filtering for complete history
+			options = nil
 		} else {
 			startDate := time.Now().AddDate(0, 0, -days)
 			fmt.Printf("Fetching transactions from the last %d days...\n", days)
@@ -86,12 +79,9 @@ Examples:
 			return fmt.Errorf("failed to fetch account data from SimpleFIN: %w", err)
 		}
 
-		// Track sync statistics
 		var stats syncStats
 		stats.startTime = time.Now()
 
-		// 4. Extract and store organizations from accounts
-		// Since organizations are now embedded in accounts, we need to collect unique organizations
 		orgMap := make(map[string]simplefin.Organization)
 		for _, account := range accountsData.Accounts {
 			orgMap[account.Org.ID] = account.Org
@@ -110,16 +100,13 @@ Examples:
 			stats.orgsProcessed++
 		}
 
-		// 5. Process and store accounts
 		fmt.Printf("Processing %d accounts...\n", len(accountsData.Accounts))
 		for _, account := range accountsData.Accounts {
-			// Convert string balance to cents
 			balance, err := simplefin.ParseAmountToCents(account.Balance)
 			if err != nil {
 				return fmt.Errorf("failed to parse balance for account %s: %w", account.Name, err)
 			}
 
-			// Convert available balance if present
 			var availableBalance *int
 			if account.AvailableBalance != nil {
 				availBalCents, err := simplefin.ParseAmountToCents(*account.AvailableBalance)
@@ -129,13 +116,11 @@ Examples:
 				availableBalance = &availBalCents
 			}
 
-			// Convert unix timestamp to ISO string if present
 			balanceDate := ""
 			if account.BalanceDate != nil {
 				balanceDate = simplefin.UnixTimestampToISO(*account.BalanceDate)
 			}
 
-			// Normalize currency - default empty currencies to USD
 			currency := account.Currency
 			if currency == "" {
 				currency = "USD"
@@ -143,7 +128,7 @@ Examples:
 
 			if err := db.SaveAccount(
 				account.ID,
-				account.Org.ID, // Use embedded organization ID
+				account.Org.ID,
 				account.Name,
 				currency,
 				balance,
@@ -153,7 +138,6 @@ Examples:
 				return fmt.Errorf("failed to save account %s: %w", account.Name, err)
 			}
 
-			// Record balance snapshot for trending
 			if err := db.SaveBalanceHistory(account.ID, balance, availableBalance); err != nil {
 				return fmt.Errorf("failed to save balance history for account %s: %w", account.Name, err)
 			}
@@ -161,23 +145,19 @@ Examples:
 			stats.accountsProcessed++
 		}
 
-		// 6. Process and store transactions
 		fmt.Printf("Processing transactions...\n")
 		for _, account := range accountsData.Accounts {
 			for _, transaction := range account.Transactions {
-				// Check if transaction already exists to track new vs existing
 				exists, err := db.TransactionExists(transaction.ID)
 				if err != nil {
 					return fmt.Errorf("failed to check transaction existence: %w", err)
 				}
 
-				// Convert string amount to cents
 				amount, err := simplefin.ParseAmountToCents(transaction.Amount)
 				if err != nil {
 					return fmt.Errorf("failed to parse amount for transaction %s: %w", transaction.ID, err)
 				}
 
-				// Convert unix timestamp to ISO string
 				postedDate := simplefin.UnixTimestampToISO(transaction.Posted)
 
 				pending := false
@@ -203,7 +183,6 @@ Examples:
 			}
 		}
 
-		// 7. Provide summary
 		stats.duration = time.Since(stats.startTime)
 		printSyncSummary(stats)
 
@@ -211,7 +190,6 @@ Examples:
 	},
 }
 
-// syncStats tracks synchronization statistics
 type syncStats struct {
 	startTime             time.Time
 	duration              time.Duration
@@ -221,7 +199,6 @@ type syncStats struct {
 	newTransactions       int
 }
 
-// printSyncSummary displays a summary of the synchronization results
 func printSyncSummary(stats syncStats) {
 	fmt.Printf("\nSync Summary:\n")
 	fmt.Printf("  Duration: %v\n", stats.duration.Round(time.Millisecond))

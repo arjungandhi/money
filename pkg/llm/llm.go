@@ -18,11 +18,11 @@ type Client struct {
 
 // NewClient creates a new LLM client with the configured command
 func NewClient() *Client {
-	// Get command from environment variable, default to claude
+	// Get command from environment variable, default to ollama with llama3.2
 	promptCmd := os.Getenv("LLM_PROMPT_CMD")
 	if promptCmd == "" {
-		// Default command uses claude
-		promptCmd = "claude"
+		// Default command uses ollama with llama3.2
+		promptCmd = "ollama run llama3.2"
 	}
 
 	// Simple fixed batch size (default 100)
@@ -402,17 +402,17 @@ func (c *Client) calculateOptimalBatchSize(transactions []TransactionData, opera
 
 // calculateOverlapSize determines how much batches should overlap for transfer identification
 func (c *Client) calculateOverlapSize(batchSize int) int {
-	// For transfer identification, we want some overlap to catch transfer pairs
+	// For transfer identification, we want reasonable overlap to catch transfer pairs
 	// that might be split across batch boundaries
-	overlap := batchSize / 5 // 20% overlap - smaller for memory efficiency
-	if overlap < 2 {
-		overlap = 2
+	overlap := batchSize / 3 // 33% overlap - good balance
+	if overlap < 5 {
+		overlap = 5 // Minimum 5 transactions overlap
 	}
 	if overlap >= batchSize {
 		overlap = batchSize - 1 // Ensure overlap is less than batch size
 	}
-	if overlap > 5 {
-		overlap = 5 // Cap at 5 transactions for memory efficiency
+	if overlap > 25 {
+		overlap = 25 // Cap at 25 transactions for very large batches
 	}
 	return overlap
 }

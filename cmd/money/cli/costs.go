@@ -5,8 +5,6 @@ import (
 
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
-
-	"github.com/arjungandhi/money/pkg/database"
 )
 
 var Costs = &Z.Cmd{
@@ -15,17 +13,6 @@ var Costs = &Z.Cmd{
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		// TODO: Implement costs logic
-		// 1. Parse time period (default: this month)
-		// 2. Query transactions for negative amounts using database.DB.GetTransactions()
-		// 3. Categorize and display breakdown
-
-		db, err := database.New()
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		// Placeholder implementation
 		fmt.Println("TODO: Implement costs command")
 		return nil
 	},

@@ -21,11 +21,12 @@ CREATE TABLE accounts (
     id TEXT PRIMARY KEY,  -- SimpleFIN account ID
     org_id TEXT NOT NULL,
     name TEXT NOT NULL,
+    nickname TEXT,  -- Custom user-defined nickname for the account
     currency TEXT NOT NULL DEFAULT 'USD',
     balance INTEGER NOT NULL,  -- Store as cents to avoid floating point issues
     available_balance INTEGER,
     balance_date DATETIME,
-    account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other')),
+    account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other', 'unset')) DEFAULT 'unset',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (org_id) REFERENCES organizations(id)
