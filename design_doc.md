@@ -31,7 +31,12 @@
         - user can review and adjust categories as needed
         - `money transactions categorize modify <transaction-id> <category-name>`: manually set or change the category of a specific transaction
         - `money transactions categorize clear <transaction-id>`: clear the category of a specific transaction (set to uncategorized)
-         
+        - `money transactions categorize transfer <transaction-id>`: mark transaction as a transfer (excludes from income/expense calculations)
+- `money transactions category`: manage transaction categories
+  - `money transactions category list`: show all existing categories
+  - `money transactions category add <name>`: add a new category
+  - `money transactions category remove <name>`: remove a category (only if not used by any transactions)
+  - `money transactions category seed`: populate database with common default categories
 
 # Tech Stack
 1. language: Go
@@ -87,7 +92,6 @@ CREATE TABLE accounts (
 CREATE TABLE categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -109,6 +113,7 @@ CREATE TABLE transactions (
     amount INTEGER NOT NULL,  -- Store as cents
     description TEXT NOT NULL,
     pending BOOLEAN DEFAULT FALSE,
+    is_transfer BOOLEAN DEFAULT FALSE,  -- Excludes from income/expense calculations
     category_id INTEGER,  -- NULL for uncategorized transactions
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -120,6 +125,7 @@ CREATE TABLE transactions (
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_posted ON transactions(posted);
 CREATE INDEX idx_transactions_category_id ON transactions(category_id);
+CREATE INDEX idx_transactions_is_transfer ON transactions(is_transfer);
 CREATE INDEX idx_accounts_org_id ON accounts(org_id);
 CREATE INDEX idx_balance_history_account_id ON balance_history(account_id);
 CREATE INDEX idx_balance_history_recorded_at ON balance_history(recorded_at);

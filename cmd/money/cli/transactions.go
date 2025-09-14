@@ -5,11 +5,55 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatih/color"
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
 
 	"github.com/arjungandhi/money/pkg/database"
 )
+
+
+var (
+	grayColor  = color.New(color.FgHiBlack)
+	redColor   = color.New(color.FgRed)   // For expenses (negative amounts)
+	greenColor = color.New(color.FgGreen) // For income (positive amounts)
+)
+
+// colorizeCategory returns a colorized version of the category name
+func colorizeCategory(category string) string {
+	if category == "Transfer" {
+		return grayColor.Sprint(category)
+	}
+	if category == "Uncategorized" {
+		return redColor.Sprint(category)
+	}
+
+	// All other categories are uncolored
+	return category
+}
+
+// colorizeAmount returns a colorized version of the amount based on sign
+// and calculates the proper padding to account for ANSI color codes
+func colorizeAmount(amount int, amountStr string, width int) string {
+	coloredStr := amountStr
+	if amount < 0 {
+		coloredStr = redColor.Sprint(amountStr)   // Expenses in red
+	} else if amount > 0 {
+		coloredStr = greenColor.Sprint(amountStr) // Income in green
+	}
+
+	// Calculate padding to account for invisible ANSI codes
+	// The visible length is the original string length
+	visibleLen := len(amountStr)
+	totalLen := len(coloredStr)
+	invisibleLen := totalLen - visibleLen
+
+	// Adjust width to account for invisible characters
+	adjustedWidth := width + invisibleLen
+
+	// Right-align the colored string with adjusted width
+	return fmt.Sprintf("%*s", adjustedWidth, coloredStr)
+}
 
 var Transactions = &Z.Cmd{
 	Name:    "transactions",
@@ -18,6 +62,7 @@ var Transactions = &Z.Cmd{
 		help.Cmd,
 		TransactionsList,
 		Categorize,
+		Category,
 	},
 }
 
@@ -78,6 +123,18 @@ var TransactionsList = &Z.Cmd{
 			return nil
 		}
 
+		// Get accounts for name lookup
+		accounts, err := db.GetAccounts()
+		if err != nil {
+			return fmt.Errorf("failed to get accounts: %w", err)
+		}
+
+		// Create account ID to name mapping
+		accountMap := make(map[string]string)
+		for _, account := range accounts {
+			accountMap[account.ID] = account.Name
+		}
+
 		// Display transactions
 		fmt.Printf("Found %d transactions:\n\n", len(transactions))
 		fmt.Printf("%-20s %-15s %-12s %-50s %s\n", "Date", "Account", "Amount", "Description", "Category")
@@ -90,10 +147,13 @@ var TransactionsList = &Z.Cmd{
 
 			// Format amount (convert cents to dollars)
 			amountStr := fmt.Sprintf("$%.2f", float64(t.Amount)/100.0)
+			coloredAmount := colorizeAmount(t.Amount, amountStr, 12)
 
 			// Get category name if categorized
 			categoryStr := "Uncategorized"
-			if t.CategoryID != nil {
+			if t.IsTransfer {
+				categoryStr = "Transfer"
+			} else if t.CategoryID != nil {
 				category, err := db.GetCategoryByID(*t.CategoryID)
 				if err == nil {
 					categoryStr = category.Name
@@ -106,14 +166,21 @@ var TransactionsList = &Z.Cmd{
 				description = description[:47] + "..."
 			}
 
-			// Truncate account ID for display
-			accountDisplay := t.AccountID
-			if len(accountDisplay) > 12 {
-				accountDisplay = accountDisplay[:12] + "..."
+			// Get account name for display
+			accountDisplay := t.AccountID // fallback to ID if name not found
+			if accountName, exists := accountMap[t.AccountID]; exists {
+				accountDisplay = accountName
+			}
+			// Truncate account name if too long
+			if len(accountDisplay) > 13 {
+				accountDisplay = accountDisplay[:10] + "..."
 			}
 
-			fmt.Printf("%-20s %-15s %12s %-50s %s\n",
-				dateStr, accountDisplay, amountStr, description, categoryStr)
+			// Apply color to category
+			coloredCategory := colorizeCategory(categoryStr)
+
+			fmt.Printf("%-20s %-15s %s %-50s %s\n",
+				dateStr, accountDisplay, coloredAmount, description, coloredCategory)
 		}
 
 		return nil
@@ -127,6 +194,11 @@ var Categorize = &Z.Cmd{
 		help.Cmd,
 		CategorizeModify,
 		CategorizeClear,
+		CategorizeList,
+		CategorizeAdd,
+		CategorizeRemove,
+		CategorizeSeed,
+		CategorizeTransfer,
 		CategorizeAuto, // LLM auto-categorization placeholder
 	},
 }
@@ -168,14 +240,8 @@ var CategorizeModify = &Z.Cmd{
 			return fmt.Errorf("transaction not found: %s", transactionID)
 		}
 
-		// Determine category type: negative amounts are expenses, positive are income
-		categoryType := "expense"
-		if transaction.Amount > 0 {
-			categoryType = "income"
-		}
-
-		// Save or get category
-		categoryID, err := db.SaveCategory(categoryName, categoryType)
+		// Save or get category (no type needed now)
+		categoryID, err := db.SaveCategory(categoryName)
 		if err != nil {
 			return fmt.Errorf("failed to save category: %w", err)
 		}
@@ -219,6 +285,140 @@ var CategorizeClear = &Z.Cmd{
 	},
 }
 
+var CategorizeList = &Z.Cmd{
+	Name:     "list",
+	Summary:  "Show all existing categories",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		categories, err := db.GetCategories()
+		if err != nil {
+			return fmt.Errorf("failed to get categories: %w", err)
+		}
+
+		if len(categories) == 0 {
+			fmt.Println("No categories found. Use 'money transactions categorize add <name>' to create categories or 'money transactions categorize seed' to add common defaults.")
+			return nil
+		}
+
+		for _, c := range categories {
+			fmt.Println(c.Name)
+		}
+
+		return nil
+	},
+}
+
+var CategorizeAdd = &Z.Cmd{
+	Name:     "add",
+	Summary:  "Add a new category",
+	Usage:    "add <name>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("usage: money transactions categorize add <name>")
+		}
+
+		categoryName := strings.Join(args, " ")
+
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		_, err = db.SaveCategory(categoryName)
+		if err != nil {
+			return fmt.Errorf("failed to add category: %w", err)
+		}
+
+		fmt.Printf("Category '%s' added successfully\n", categoryName)
+		return nil
+	},
+}
+
+var CategorizeRemove = &Z.Cmd{
+	Name:     "remove",
+	Summary:  "Remove a category (only if not used by any transactions)",
+	Usage:    "remove <name>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("usage: money transactions categorize remove <name>")
+		}
+
+		categoryName := strings.Join(args, " ")
+
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		err = db.DeleteCategory(categoryName)
+		if err != nil {
+			return fmt.Errorf("failed to remove category: %w", err)
+		}
+
+		fmt.Printf("Category '%s' removed successfully\n", categoryName)
+		return nil
+	},
+}
+
+var CategorizeSeed = &Z.Cmd{
+	Name:     "seed",
+	Summary:  "Populate database with common default categories",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		err = db.SeedDefaultCategories()
+		if err != nil {
+			return fmt.Errorf("failed to seed categories: %w", err)
+		}
+
+		fmt.Println("Default categories added successfully")
+		return nil
+	},
+}
+
+var CategorizeTransfer = &Z.Cmd{
+	Name:     "transfer",
+	Summary:  "Mark transaction as a transfer (excludes from income/expense calculations)",
+	Usage:    "transfer <transaction-id>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) != 1 {
+			return fmt.Errorf("usage: money transactions categorize transfer <transaction-id>")
+		}
+
+		transactionID := args[0]
+
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		err = db.MarkTransactionAsTransfer(transactionID)
+		if err != nil {
+			return fmt.Errorf("failed to mark transaction as transfer: %w", err)
+		}
+
+		fmt.Printf("Transaction %s marked as transfer\n", transactionID)
+		return nil
+	},
+}
+
 var CategorizeAuto = &Z.Cmd{
 	Name:     "auto",
 	Summary:  "Automatically categorize uncategorized transactions using LLM (TODO)",
@@ -247,6 +447,124 @@ var CategorizeAuto = &Z.Cmd{
 		fmt.Println("3. Present interactive prompts for category review and adjustment")
 		fmt.Println("4. Save category assignments back to database")
 
+		return nil
+	},
+}
+
+var Category = &Z.Cmd{
+	Name:     "category",
+	Summary:  "Manage transaction categories",
+	Commands: []*Z.Cmd{
+		help.Cmd,
+		CategoryList,
+		CategoryAdd,
+		CategoryRemove,
+		CategorySeed,
+	},
+}
+
+var CategoryList = &Z.Cmd{
+	Name:     "list",
+	Summary:  "Show all existing categories",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		categories, err := db.GetCategories()
+		if err != nil {
+			return fmt.Errorf("failed to get categories: %w", err)
+		}
+
+		if len(categories) == 0 {
+			fmt.Println("No categories found. Use 'money transactions category add <name>' to create categories or 'money transactions category seed' to add common defaults.")
+			return nil
+		}
+
+		for _, c := range categories {
+			fmt.Println(c.Name)
+		}
+
+		return nil
+	},
+}
+
+var CategoryAdd = &Z.Cmd{
+	Name:     "add",
+	Summary:  "Add a new category",
+	Usage:    "add <name>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("usage: money transactions category add <name>")
+		}
+
+		categoryName := strings.Join(args, " ")
+
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		_, err = db.SaveCategory(categoryName)
+		if err != nil {
+			return fmt.Errorf("failed to add category: %w", err)
+		}
+
+		fmt.Printf("Category '%s' added successfully\n", categoryName)
+		return nil
+	},
+}
+
+var CategoryRemove = &Z.Cmd{
+	Name:     "remove",
+	Summary:  "Remove a category (only if not used by any transactions)",
+	Usage:    "remove <name>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("usage: money transactions category remove <name>")
+		}
+
+		categoryName := strings.Join(args, " ")
+
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		err = db.DeleteCategory(categoryName)
+		if err != nil {
+			return fmt.Errorf("failed to remove category: %w", err)
+		}
+
+		fmt.Printf("Category '%s' removed successfully\n", categoryName)
+		return nil
+	},
+}
+
+var CategorySeed = &Z.Cmd{
+	Name:     "seed",
+	Summary:  "Populate database with common default categories",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		err = db.SeedDefaultCategories()
+		if err != nil {
+			return fmt.Errorf("failed to seed categories: %w", err)
+		}
+
+		fmt.Println("Default categories added successfully")
 		return nil
 	},
 }

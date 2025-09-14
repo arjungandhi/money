@@ -105,6 +105,75 @@ func (db *DB) runIncrementalMigrations() error {
 		}
 	}
 
+	// Check if is_transfer column exists in transactions table
+	var transferColumnExists int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM pragma_table_info('transactions')
+		WHERE name = 'is_transfer'
+	`).Scan(&transferColumnExists)
+	if err != nil {
+		return fmt.Errorf("failed to check is_transfer column: %w", err)
+	}
+
+	// Add is_transfer column if it doesn't exist
+	if transferColumnExists == 0 {
+		_, err = db.conn.Exec(`
+			ALTER TABLE transactions
+			ADD COLUMN is_transfer BOOLEAN DEFAULT FALSE
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add is_transfer column: %w", err)
+		}
+	}
+
+	// Check if type column exists in categories table and remove it if it does
+	var categoryTypeExists int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM pragma_table_info('categories')
+		WHERE name = 'type'
+	`).Scan(&categoryTypeExists)
+	if err != nil {
+		return fmt.Errorf("failed to check categories type column: %w", err)
+	}
+
+	// Remove type column from categories if it exists (SQLite doesn't support DROP COLUMN easily)
+	// We'll need to recreate the table without the type column
+	if categoryTypeExists > 0 {
+		// Create a new categories table without the type column
+		_, err = db.conn.Exec(`
+			CREATE TABLE categories_new (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT NOT NULL UNIQUE,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create new categories table: %w", err)
+		}
+
+		// Copy data from old table to new (without type column)
+		_, err = db.conn.Exec(`
+			INSERT INTO categories_new (id, name, created_at)
+			SELECT id, name, created_at FROM categories
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to copy categories data: %w", err)
+		}
+
+		// Drop old table and rename new one
+		_, err = db.conn.Exec(`DROP TABLE categories`)
+		if err != nil {
+			return fmt.Errorf("failed to drop old categories table: %w", err)
+		}
+
+		_, err = db.conn.Exec(`ALTER TABLE categories_new RENAME TO categories`)
+		if err != nil {
+			return fmt.Errorf("failed to rename new categories table: %w", err)
+		}
+	}
+
 	// Check if balance_history table exists
 	var tableExists int
 	err = db.conn.QueryRow(`
@@ -433,8 +502,8 @@ func (db *DB) SaveTransaction(id, accountID, posted string, amount int, descript
 	// Use INSERT OR IGNORE to avoid duplicate transactions
 	// If the transaction already exists, we don't update it to preserve any manual categorization
 	_, err := db.conn.Exec(`
-		INSERT OR IGNORE INTO transactions (id, account_id, posted, amount, description, pending)
-		VALUES (?, ?, ?, ?, ?, ?)`,
+		INSERT OR IGNORE INTO transactions (id, account_id, posted, amount, description, pending, is_transfer)
+		VALUES (?, ?, ?, ?, ?, ?, FALSE)`,
 		id, accountID, posted, amount, description, pending)
 	if err != nil {
 		return fmt.Errorf("failed to save transaction: %w", err)
@@ -449,14 +518,14 @@ func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Tr
 	if accountID != "" {
 		if startDate != "" && endDate != "" {
 			query = `
-				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
 				FROM transactions t
 				WHERE t.account_id = ? AND t.posted >= ? AND t.posted <= ?
 				ORDER BY t.posted DESC`
 			args = []interface{}{accountID, startDate, endDate}
 		} else {
 			query = `
-				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
 				FROM transactions t
 				WHERE t.account_id = ?
 				ORDER BY t.posted DESC`
@@ -465,14 +534,14 @@ func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Tr
 	} else {
 		if startDate != "" && endDate != "" {
 			query = `
-				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
 				FROM transactions t
 				WHERE t.posted >= ? AND t.posted <= ?
 				ORDER BY t.posted DESC`
 			args = []interface{}{startDate, endDate}
 		} else {
 			query = `
-				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
 				FROM transactions t
 				ORDER BY t.posted DESC`
 			args = []interface{}{}
@@ -497,6 +566,7 @@ func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Tr
 			&t.Amount,
 			&t.Description,
 			&t.Pending,
+			&t.IsTransfer,
 			&categoryID,
 		)
 		if err != nil {
@@ -520,7 +590,7 @@ func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Tr
 
 func (db *DB) GetUncategorizedTransactions() ([]Transaction, error) {
 	query := `
-		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
 		FROM transactions t
 		WHERE t.category_id IS NULL
 		ORDER BY t.posted DESC`
@@ -543,6 +613,7 @@ func (db *DB) GetUncategorizedTransactions() ([]Transaction, error) {
 			&t.Amount,
 			&t.Description,
 			&t.Pending,
+			&t.IsTransfer,
 			&categoryID,
 		)
 		if err != nil {
@@ -594,17 +665,12 @@ func (db *DB) TransactionExists(id string) (bool, error) {
 }
 
 // Category methods
-func (db *DB) SaveCategory(name, categoryType string) (int, error) {
-	// Validate category type
-	if categoryType != "income" && categoryType != "expense" {
-		return 0, fmt.Errorf("invalid category type: %s. Must be 'income' or 'expense'", categoryType)
-	}
-
+func (db *DB) SaveCategory(name string) (int, error) {
 	// Use INSERT OR IGNORE to avoid duplicate categories, then get the ID
 	_, err := db.conn.Exec(`
-		INSERT OR IGNORE INTO categories (name, type)
-		VALUES (?, ?)`,
-		name, categoryType)
+		INSERT OR IGNORE INTO categories (name)
+		VALUES (?)`,
+		name)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert category: %w", err)
 	}
@@ -613,8 +679,8 @@ func (db *DB) SaveCategory(name, categoryType string) (int, error) {
 	var id int
 	err = db.conn.QueryRow(`
 		SELECT id FROM categories
-		WHERE name = ? AND type = ?`,
-		name, categoryType).Scan(&id)
+		WHERE name = ?`,
+		name).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get category ID: %w", err)
 	}
@@ -624,9 +690,9 @@ func (db *DB) SaveCategory(name, categoryType string) (int, error) {
 
 func (db *DB) GetCategories() ([]Category, error) {
 	query := `
-		SELECT id, name, type
+		SELECT id, name
 		FROM categories
-		ORDER BY type, name`
+		ORDER BY name`
 
 	rows, err := db.conn.Query(query)
 	if err != nil {
@@ -637,7 +703,7 @@ func (db *DB) GetCategories() ([]Category, error) {
 	var categories []Category
 	for rows.Next() {
 		var c Category
-		err := rows.Scan(&c.ID, &c.Name, &c.Type)
+		err := rows.Scan(&c.ID, &c.Name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan category: %w", err)
 		}
@@ -654,10 +720,10 @@ func (db *DB) GetCategories() ([]Category, error) {
 func (db *DB) GetCategoryByID(categoryID int) (*Category, error) {
 	var c Category
 	err := db.conn.QueryRow(`
-		SELECT id, name, type
+		SELECT id, name
 		FROM categories
 		WHERE id = ?`,
-		categoryID).Scan(&c.ID, &c.Name, &c.Type)
+		categoryID).Scan(&c.ID, &c.Name)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("category not found: %d", categoryID)
@@ -665,6 +731,90 @@ func (db *DB) GetCategoryByID(categoryID int) (*Category, error) {
 		return nil, fmt.Errorf("failed to get category: %w", err)
 	}
 	return &c, nil
+}
+
+func (db *DB) DeleteCategory(name string) error {
+	// Check if category is used by any transactions
+	var count int
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*) FROM transactions
+		WHERE category_id = (SELECT id FROM categories WHERE name = ?)`,
+		name).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check category usage: %w", err)
+	}
+
+	if count > 0 {
+		return fmt.Errorf("cannot delete category '%s': it is used by %d transactions", name, count)
+	}
+
+	// Delete the category
+	result, err := db.conn.Exec(`DELETE FROM categories WHERE name = ?`, name)
+	if err != nil {
+		return fmt.Errorf("failed to delete category: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("category not found: %s", name)
+	}
+
+	return nil
+}
+
+func (db *DB) SeedDefaultCategories() error {
+	defaultCategories := []string{
+		"Housing",
+		"Transportation",
+		"Groceries",
+		"Dining Out",
+		"Healthcare",
+		"Shopping",
+		"Entertainment",
+		"Bills & Services",
+		"Personal Care",
+		"Travel",
+		"Fees",
+		"Projects",
+		"Subscriptions",
+		"Income",
+		"Other",
+	}
+
+	for _, categoryName := range defaultCategories {
+		_, err := db.SaveCategory(categoryName)
+		if err != nil {
+			return fmt.Errorf("failed to seed category '%s': %w", categoryName, err)
+		}
+	}
+
+	return nil
+}
+
+func (db *DB) MarkTransactionAsTransfer(transactionID string) error {
+	result, err := db.conn.Exec(`
+		UPDATE transactions
+		SET is_transfer = TRUE, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		transactionID)
+	if err != nil {
+		return fmt.Errorf("failed to mark transaction as transfer: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("transaction not found: %s", transactionID)
+	}
+
+	return nil
 }
 
 // Balance History methods
@@ -787,6 +937,7 @@ type Transaction struct {
 	Amount      int
 	Description string
 	Pending     bool
+	IsTransfer  bool
 	CategoryID  *int
 }
 
@@ -799,5 +950,4 @@ type Organization struct {
 type Category struct {
 	ID   int
 	Name string
-	Type string
 }
