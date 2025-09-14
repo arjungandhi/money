@@ -3,20 +3,36 @@ package cli
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
+	"os"
 
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
+	"github.com/guptarohit/asciigraph"
 
 	"github.com/arjungandhi/money/pkg/database"
 )
 
 var Balance = &Z.Cmd{
 	Name:     "balance",
-	Summary:  "Show current balance of all accounts and net worth",
+	Summary:  "Show current balance of all accounts and net worth with trending graph",
+	Usage:    "[--days|-d <number>]",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
+		// Parse days flag (default 30)
+		days := 30
+		for i, arg := range args {
+			if (arg == "--days" || arg == "-d") && i+1 < len(args) {
+				if parsedDays, err := strconv.Atoi(args[i+1]); err == nil && parsedDays > 0 {
+					days = parsedDays
+				}
+				break
+			}
+		}
+
 		db, err := database.New()
 		if err != nil {
 			return err
@@ -71,117 +87,49 @@ var Balance = &Z.Cmd{
 			}
 		}
 
-		// Display balances grouped by account type, then organization
+		// Display balance trend graph first
+		err = displayBalanceTrends(db, accounts, days)
+		if err != nil {
+			// Don't fail the command if graph generation fails, just log a warning
+			fmt.Printf("Warning: could not generate balance trend graph: %v\n", err)
+		}
+
+
+		// Show properly aligned current balances table
+		fmt.Println("\nCurrent Account Balances")
+		fmt.Println(strings.Repeat("=", 70))
+
+		// Create tabwriter for proper alignment
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(w, "Type\tInstitution\tAccount\tBalance\n")
+		fmt.Fprintf(w, "────\t───────────\t───────\t───────\n")
+
 		var totalNetWorth int64
-		currencyTotals := make(map[string]int64)
-		
-		fmt.Println("Account Balances by Type")
-		fmt.Println(strings.Repeat("=", 24))
-		fmt.Println()
+		for _, account := range accounts {
+			accountType := "unset"
+			if account.AccountType != nil {
+				accountType = *account.AccountType
+			}
 
-		for _, accountType := range accountTypes {
-			accountsByOrg := accountsByTypeAndOrg[accountType]
-			
-			// Display account type header with appropriate emoji
 			typeIcon := getTypeIcon(accountType)
-			typeDisplayName := getTypeDisplayName(accountType)
-			fmt.Printf("%s %s\n", typeIcon, typeDisplayName)
-			fmt.Println(strings.Repeat("-", len(typeDisplayName)+4))
-			
-			// Sort organization IDs within this account type
-			var orgIDs []string
-			for orgID := range accountsByOrg {
-				orgIDs = append(orgIDs, orgID)
-			}
-			sort.Strings(orgIDs)
+			balanceStr := formatCurrency(account.Balance, account.Currency)
 
-			typeTotalsByCurrency := make(map[string]int64)
-			
-			for _, orgID := range orgIDs {
-				accounts := accountsByOrg[orgID]
-				org, exists := orgMap[orgID]
-				
-				// Display organization name
-				if exists {
-					fmt.Printf("📍 %s\n", org.Name)
-				} else {
-					fmt.Printf("📍 Organization %s\n", orgID)
-				}
-
-				orgTotalsByCurrency := make(map[string]int64)
-				for _, account := range accounts {
-					// Format balance
-					balanceStr := formatCurrency(account.Balance, account.Currency)
-					
-					// Format balance date if available
-					dateStr := ""
-					if account.BalanceDate != nil {
-						if parsedDate, err := time.Parse(time.RFC3339, *account.BalanceDate); err == nil {
-							dateStr = fmt.Sprintf(" (as of %s)", parsedDate.Format("Jan 2, 2006"))
-						} else {
-							// Try to parse other common date formats
-							dateStr = fmt.Sprintf(" (as of %s)", *account.BalanceDate)
-						}
-					}
-
-					// Display account info with better formatting
-					fmt.Printf("  %-35s %15s%s\n", account.Name, balanceStr, dateStr)
-					
-					// Add to currency-specific totals
-					orgTotalsByCurrency[account.Currency] += int64(account.Balance)
-					typeTotalsByCurrency[account.Currency] += int64(account.Balance)
-					currencyTotals[account.Currency] += int64(account.Balance)
-				}
-
-				fmt.Println()
+			// Get institution name
+			institutionName := account.OrgID // fallback to ID
+			if org, exists := orgMap[account.OrgID]; exists {
+				institutionName = org.Name
 			}
 
-			// Display account type totals by currency  
-			if len(typeTotalsByCurrency) == 1 {
-				// Single currency - show simple total
-				for currency, total := range typeTotalsByCurrency {
-					fmt.Printf("%s Total: %s\n", typeDisplayName, formatCurrency(int(total), currency))
-				}
-			} else {
-				// Multiple currencies - show breakdown
-				fmt.Printf("%s Totals:\n", typeDisplayName)
-				for currency, total := range typeTotalsByCurrency {
-					fmt.Printf("  %s: %s\n", currency, formatCurrency(int(total), currency))
-				}
-			}
-			fmt.Println()
-
-			// For net worth calculation, assume USD for simplicity (in a real app, we'd convert currencies)
-			if len(typeTotalsByCurrency) == 1 {
-				for _, total := range typeTotalsByCurrency {
-					totalNetWorth += total
-				}
-			} else {
-				// If mixed currencies, only add USD amounts to net worth
-				if usdTotal, exists := typeTotalsByCurrency["USD"]; exists {
-					totalNetWorth += usdTotal
-				}
-			}
+			fmt.Fprintf(w, "%s %s\t%s\t%s\t%s\n",
+				typeIcon, strings.Title(accountType), institutionName, account.Name, balanceStr)
+			totalNetWorth += int64(account.Balance)
 		}
 
-		// Display net worth
-		fmt.Println(strings.Repeat("=", 24))
-		if len(currencyTotals) == 1 {
-			// Single currency across all accounts
-			for currency, total := range currencyTotals {
-				fmt.Printf("💰 Net Worth: %s\n", formatCurrency(int(total), currency))
-			}
-		} else {
-			// Multiple currencies - show breakdown
-			fmt.Printf("💰 Net Worth by Currency:\n")
-			for currency, total := range currencyTotals {
-				fmt.Printf("   %s: %s\n", currency, formatCurrency(int(total), currency))
-			}
-			if usdTotal, exists := currencyTotals["USD"]; exists {
-				fmt.Printf("\n   Primary (USD): %s\n", formatCurrency(int(usdTotal), "USD"))
-			}
-		}
-		fmt.Println(strings.Repeat("=", 24))
+		w.Flush()
+
+		fmt.Println(strings.Repeat("=", 70))
+		fmt.Printf("💰 Net Worth: %s\n", formatCurrency(int(totalNetWorth), "USD"))
+		fmt.Println(strings.Repeat("=", 70))
 
 		return nil
 	},
@@ -298,4 +246,226 @@ func getTypeDisplayName(accountType string) string {
 	default:
 		return strings.Title(accountType) + " Accounts"
 	}
+}
+
+// displayBalanceTrends shows an ASCII graph of balance trends over time grouped by account type
+func displayBalanceTrends(db *database.DB, accounts []database.Account, days int) error {
+	fmt.Println()
+	fmt.Printf("Balance Trends (Last %d Days)\n", days)
+	fmt.Println(strings.Repeat("=", 30))
+
+	// Get all balance history for the period
+	history, err := db.GetAllBalanceHistory(days)
+	if err != nil {
+		return fmt.Errorf("failed to get balance history: %w", err)
+	}
+
+	if len(history) == 0 {
+		fmt.Println("No historical balance data available. Run 'money fetch' to start collecting balance trends.")
+		return nil
+	}
+
+	// Create account type lookup map
+	accountTypeMap := make(map[string]string)
+	for _, account := range accounts {
+		accountType := "unset"
+		if account.AccountType != nil {
+			accountType = *account.AccountType
+		}
+		accountTypeMap[account.ID] = accountType
+	}
+
+	// Group history by account type and date
+	typeHistoryMap := make(map[string]map[string]int64) // [accountType][date] = totalBalance
+	dateSet := make(map[string]bool)
+
+	for _, bh := range history {
+		accountType, exists := accountTypeMap[bh.AccountID]
+		if !exists {
+			accountType = "unset"
+		}
+
+		// Parse the recorded_at timestamp and format as date
+		recordedTime, err := time.Parse("2006-01-02 15:04:05", bh.RecordedAt)
+		if err != nil {
+			// Try alternative format
+			recordedTime, err = time.Parse(time.RFC3339, bh.RecordedAt)
+			if err != nil {
+				continue // Skip this entry if we can't parse the date
+			}
+		}
+		dateStr := recordedTime.Format("2006-01-02")
+
+		if typeHistoryMap[accountType] == nil {
+			typeHistoryMap[accountType] = make(map[string]int64)
+		}
+
+		typeHistoryMap[accountType][dateStr] += int64(bh.Balance)
+		dateSet[dateStr] = true
+	}
+
+	// Convert dates to sorted slice
+	var dates []string
+	for date := range dateSet {
+		dates = append(dates, date)
+	}
+	sort.Strings(dates)
+
+	if len(dates) < 2 {
+		fmt.Println("Not enough historical data points to generate a meaningful trend graph.")
+		return nil
+	}
+
+	// Create multi-line graph with different series for each account type
+	typeOrder := []string{"checking", "savings", "investment", "credit", "loan", "other", "unset"}
+	var allSeries [][]float64
+	var seriesLabels []string
+	var seriesColors []asciigraph.AnsiColor
+	var activeTypes []string // Track which types actually have data
+
+	// Define colors for each account type
+	colorMap := map[string]asciigraph.AnsiColor{
+		"checking":   asciigraph.Green,
+		"savings":    asciigraph.Blue,
+		"investment": asciigraph.Magenta,
+		"credit":     asciigraph.Red,
+		"loan":       asciigraph.Yellow,
+		"other":      asciigraph.Cyan,
+		"unset":      asciigraph.Default,
+	}
+
+	// Prepare data series for each account type
+	for _, accountType := range typeOrder {
+		typeHistory, exists := typeHistoryMap[accountType]
+		if !exists || len(typeHistory) == 0 {
+			continue
+		}
+
+		// Prepare data for this account type
+		var values []float64
+		var hasData bool
+		for _, date := range dates {
+			if balance, dateExists := typeHistory[date]; dateExists {
+				values = append(values, float64(balance)/100.0) // Convert cents to dollars
+				hasData = true
+			} else {
+				// Use previous value if no data for this date
+				if len(values) > 0 {
+					values = append(values, values[len(values)-1])
+				} else {
+					values = append(values, 0)
+				}
+			}
+		}
+
+		if !hasData {
+			continue
+		}
+
+		allSeries = append(allSeries, values)
+		activeTypes = append(activeTypes, accountType) // Track active types
+		typeDisplayName := getTypeDisplayName(accountType)
+		seriesLabels = append(seriesLabels, typeDisplayName)
+		if color, exists := colorMap[accountType]; exists {
+			seriesColors = append(seriesColors, color)
+		} else {
+			seriesColors = append(seriesColors, asciigraph.Default)
+		}
+	}
+
+	// Display the multi-series graph if we have data
+	if len(allSeries) > 0 {
+		fmt.Printf("\n📊 Balance Trends by Account Type\n")
+
+		// Calculate appropriate y-axis bounds
+		var minVal, maxVal float64
+		if len(allSeries) > 0 && len(allSeries[0]) > 0 {
+			minVal = allSeries[0][0]
+			maxVal = allSeries[0][0]
+			for _, series := range allSeries {
+				for _, value := range series {
+					if value < minVal {
+						minVal = value
+					}
+					if value > maxVal {
+						maxVal = value
+					}
+				}
+			}
+		}
+
+		// Create multi-series plot with proper bounds and legends
+		graph := asciigraph.PlotMany(allSeries,
+			asciigraph.Height(12),
+			asciigraph.Width(70),
+			asciigraph.LowerBound(minVal*0.95), // Add some padding below
+			asciigraph.UpperBound(maxVal*1.05), // Add some padding above
+			asciigraph.SeriesColors(seriesColors...),
+			asciigraph.SeriesLegends(seriesLabels...),
+			asciigraph.Caption(fmt.Sprintf("Balance Trends (Last %d Days)", days)))
+		fmt.Println(graph)
+
+
+		// Show trend summary
+		fmt.Println("\nTrend Summary:")
+		for i, label := range seriesLabels {
+			typeIcon := getTypeIcon(activeTypes[i])
+			currentValue := allSeries[i][len(allSeries[i])-1]
+
+			var trend string
+			if len(allSeries[i]) > 1 {
+				startValue := allSeries[i][0]
+				change := currentValue - startValue
+				changePercent := 0.0
+				if startValue != 0 {
+					changePercent = (change / startValue) * 100
+				}
+
+				if change > 0 {
+					trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", formatWithCommas(int64(change)), changePercent)
+				} else if change < 0 {
+					trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", formatWithCommas(int64(-change)), changePercent)
+				} else {
+					trend = " (→ No change)"
+				}
+			}
+
+			fmt.Printf("  %s %s: $%s%s\n",
+				typeIcon, label, formatWithCommas(int64(currentValue)), trend)
+		}
+
+		// Calculate and show net worth
+		if len(allSeries) > 1 {
+			var netWorthStart, netWorthCurrent float64
+			for i, series := range allSeries {
+				// Skip credit and loan accounts from net worth (they're negative)
+				accountType := activeTypes[i]
+				if accountType == "credit" || accountType == "loan" {
+					continue
+				}
+				netWorthStart += series[0]
+				netWorthCurrent += series[len(series)-1]
+			}
+
+			netWorthChange := netWorthCurrent - netWorthStart
+			netWorthChangePercent := 0.0
+			if netWorthStart != 0 {
+				netWorthChangePercent = (netWorthChange / netWorthStart) * 100
+			}
+
+			fmt.Printf("\n💰 Net Worth: $%s", formatWithCommas(int64(netWorthCurrent)))
+			if netWorthChange > 0 {
+				fmt.Printf(" (↑ $%s, +%.1f%% over %d days)",
+					formatWithCommas(int64(netWorthChange)), netWorthChangePercent, days)
+			} else if netWorthChange < 0 {
+				fmt.Printf(" (↓ $%s, %.1f%% over %d days)",
+					formatWithCommas(int64(-netWorthChange)), netWorthChangePercent, days)
+			} else {
+				fmt.Printf(" (→ No change over %d days)", days)
+			}
+			fmt.Println()
+		}
+	}
+
+	return nil
 }

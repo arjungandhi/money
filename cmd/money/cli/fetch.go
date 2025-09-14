@@ -106,6 +106,12 @@ var Fetch = &Z.Cmd{
 			); err != nil {
 				return fmt.Errorf("failed to save account %s: %w", account.Name, err)
 			}
+
+			// Record balance snapshot for trending
+			if err := db.SaveBalanceHistory(account.ID, balance, availableBalance); err != nil {
+				return fmt.Errorf("failed to save balance history for account %s: %w", account.Name, err)
+			}
+
 			stats.accountsProcessed++
 		}
 

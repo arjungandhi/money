@@ -97,11 +97,54 @@ func (db *DB) runIncrementalMigrations() error {
 	// Add account_type column if it doesn't exist
 	if columnExists == 0 {
 		_, err = db.conn.Exec(`
-			ALTER TABLE accounts 
+			ALTER TABLE accounts
 			ADD COLUMN account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other'))
 		`)
 		if err != nil {
 			return fmt.Errorf("failed to add account_type column: %w", err)
+		}
+	}
+
+	// Check if balance_history table exists
+	var tableExists int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM sqlite_master
+		WHERE type='table' AND name='balance_history'
+	`).Scan(&tableExists)
+	if err != nil {
+		return fmt.Errorf("failed to check balance_history table: %w", err)
+	}
+
+	// Create balance_history table if it doesn't exist
+	if tableExists == 0 {
+		_, err = db.conn.Exec(`
+			CREATE TABLE balance_history (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				account_id TEXT NOT NULL,
+				balance INTEGER NOT NULL,
+				available_balance INTEGER,
+				recorded_at DATETIME NOT NULL,
+				FOREIGN KEY (account_id) REFERENCES accounts(id)
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create balance_history table: %w", err)
+		}
+
+		// Create indexes for balance_history
+		_, err = db.conn.Exec(`
+			CREATE INDEX idx_balance_history_account_id ON balance_history(account_id);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create balance_history account_id index: %w", err)
+		}
+
+		_, err = db.conn.Exec(`
+			CREATE INDEX idx_balance_history_recorded_at ON balance_history(recorded_at);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create balance_history recorded_at index: %w", err)
 		}
 	}
 
@@ -435,6 +478,99 @@ func (db *DB) GetCategories() ([]Category, error) {
 	return nil, nil
 }
 
+// Balance History methods
+func (db *DB) SaveBalanceHistory(accountID string, balance int, availableBalance *int) error {
+	var availableBalanceVal sql.NullInt64
+	if availableBalance != nil {
+		availableBalanceVal = sql.NullInt64{Int64: int64(*availableBalance), Valid: true}
+	}
+
+	_, err := db.conn.Exec(`
+		INSERT INTO balance_history (account_id, balance, available_balance, recorded_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+		accountID, balance, availableBalanceVal)
+	if err != nil {
+		return fmt.Errorf("failed to save balance history: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) GetBalanceHistory(accountID string, days int) ([]BalanceHistory, error) {
+	query := `
+		SELECT id, account_id, balance, available_balance, recorded_at
+		FROM balance_history
+		WHERE account_id = ? AND recorded_at >= datetime('now', '-' || ? || ' days')
+		ORDER BY recorded_at ASC`
+
+	rows, err := db.conn.Query(query, accountID, days)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query balance history: %w", err)
+	}
+	defer rows.Close()
+
+	var history []BalanceHistory
+	for rows.Next() {
+		var bh BalanceHistory
+		var availableBalance sql.NullInt64
+
+		err := rows.Scan(&bh.ID, &bh.AccountID, &bh.Balance, &availableBalance, &bh.RecordedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan balance history: %w", err)
+		}
+
+		if availableBalance.Valid {
+			balance := int(availableBalance.Int64)
+			bh.AvailableBalance = &balance
+		}
+
+		history = append(history, bh)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating balance history: %w", err)
+	}
+
+	return history, nil
+}
+
+func (db *DB) GetAllBalanceHistory(days int) ([]BalanceHistory, error) {
+	query := `
+		SELECT id, account_id, balance, available_balance, recorded_at
+		FROM balance_history
+		WHERE recorded_at >= datetime('now', '-' || ? || ' days')
+		ORDER BY recorded_at ASC`
+
+	rows, err := db.conn.Query(query, days)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query all balance history: %w", err)
+	}
+	defer rows.Close()
+
+	var history []BalanceHistory
+	for rows.Next() {
+		var bh BalanceHistory
+		var availableBalance sql.NullInt64
+
+		err := rows.Scan(&bh.ID, &bh.AccountID, &bh.Balance, &availableBalance, &bh.RecordedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan balance history: %w", err)
+		}
+
+		if availableBalance.Valid {
+			balance := int(availableBalance.Int64)
+			bh.AvailableBalance = &balance
+		}
+
+		history = append(history, bh)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating all balance history: %w", err)
+	}
+
+	return history, nil
+}
+
 // Data types
 type Account struct {
 	ID               string
@@ -445,6 +581,14 @@ type Account struct {
 	AvailableBalance *int
 	BalanceDate      *string
 	AccountType      *string
+}
+
+type BalanceHistory struct {
+	ID               int
+	AccountID        string
+	Balance          int
+	AvailableBalance *int
+	RecordedAt       string
 }
 
 type Transaction struct {

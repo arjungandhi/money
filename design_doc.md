@@ -8,18 +8,24 @@
 - `money fetch`: syncs latest data from SimpleFIN and stores it to the local database
    - Uses stored Access URL from `money init` to fetch account data via GET /accounts endpoint
    - Data synced includes accounts and transactions with full history
+   - Records balance snapshots for historical trending in balance command
    - Available Data Types:
      - Accounts: ID, name, currency, balance, available balance, balance date
      - Transactions: ID, posted timestamp, amount, description, pending status
      - Organizations: financial institution details
      - Custom currencies and exchange rates supported
    - Authentication: HTTPS with Basic Auth, SSL certificate verification required
-- `money balance`: shows the current balance of all accounts + net worth
+- `money balance`: shows the current balance of all accounts + net worth with an ASCII graph showing balance trends over time grouped by account type (default last 30 days)
+- `money accounts`: manage user accounts and account types
+  - `money accounts list`: show all accounts with their current types and organizations
+  - `money accounts type set <account-id> <type>`: set account type for better balance organization
+    - Valid types: checking, savings, credit, investment, loan, other
+  - `money accounts type clear <account-id>`: clear account type (set to unset)
 - `money costs`: shows a breakdown of all costs by category for a given time period (default this month)
 - `money income`: shows a breakdown of all income by category for a given time period (default this month)
-- `money transactions categorize`: interactively categorize uncategorized transactions via llm. 
+- `money transactions categorize`: interactively categorize uncategorized transactions via llm.
     - transactions when fetched from simplefin are uncategorized
-    - user can run this command to use a llm to categorize them 
+    - user can run this command to use a llm to categorize them
     - user can review and adjust categories as needed
 
 # Tech Stack
@@ -31,7 +37,8 @@
    - Commands structured as `&Z.Cmd{}` with Name, Summary, Call function, and optional sub-Commands
    - Use `Z "github.com/rwxrob/bonzai/z"` import alias pattern
 3. storage: SQLite (local file-based database), dir for storage configured via the MONEY_DIR env var, defaults to $HOME/.money
-4. LLM integration: For transaction categorization via `money categorize` command
+4. ASCII graphing: github.com/guptarohit/asciigraph for balance trend visualization
+5. LLM integration: For transaction categorization via `money categorize` command
    - API service for LLM calls (OpenAI/Anthropic/local model TBD)
    - Interactive prompting for category review and adjustment
 
@@ -65,6 +72,7 @@ CREATE TABLE accounts (
     balance INTEGER NOT NULL,  -- Store as cents to avoid floating point issues
     available_balance INTEGER,
     balance_date DATETIME,
+    account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other', 'unset')) DEFAULT 'unset',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (org_id) REFERENCES organizations(id)
@@ -76,6 +84,16 @@ CREATE TABLE categories (
     name TEXT NOT NULL UNIQUE,
     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Balance history for trending
+CREATE TABLE balance_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL,
+    balance INTEGER NOT NULL,  -- Store as cents
+    available_balance INTEGER,
+    recorded_at DATETIME NOT NULL,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
 -- Transactions
@@ -98,4 +116,6 @@ CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_posted ON transactions(posted);
 CREATE INDEX idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX idx_accounts_org_id ON accounts(org_id);
+CREATE INDEX idx_balance_history_account_id ON balance_history(account_id);
+CREATE INDEX idx_balance_history_recorded_at ON balance_history(recorded_at);
 ```

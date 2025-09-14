@@ -39,6 +39,16 @@ CREATE TABLE categories (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Balance history for trending
+CREATE TABLE balance_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL,
+    balance INTEGER NOT NULL,  -- Store as cents
+    available_balance INTEGER,
+    recorded_at DATETIME NOT NULL,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
 -- Transactions
 CREATE TABLE transactions (
     id TEXT PRIMARY KEY,  -- SimpleFIN transaction ID
@@ -59,3 +69,5 @@ CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_posted ON transactions(posted);
 CREATE INDEX idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX idx_accounts_org_id ON accounts(org_id);
+CREATE INDEX idx_balance_history_account_id ON balance_history(account_id);
+CREATE INDEX idx_balance_history_recorded_at ON balance_history(recorded_at);
