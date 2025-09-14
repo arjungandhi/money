@@ -13,29 +13,17 @@ import (
 // Client handles LLM interactions using configurable external commands
 type Client struct {
 	promptCommand string
-	batchSize     int // Fixed batch size for processing
 }
 
 // NewClient creates a new LLM client with the configured command
 func NewClient() *Client {
-	// Get command from environment variable, default to ollama with llama3.2
 	promptCmd := os.Getenv("LLM_PROMPT_CMD")
 	if promptCmd == "" {
-		// Default command uses ollama with llama3.2
-		promptCmd = "ollama run llama3.2"
-	}
-
-	// Simple fixed batch size (default 100)
-	batchSize := 100
-	if envBatch := os.Getenv("LLM_BATCH_SIZE"); envBatch != "" {
-		if batch, err := fmt.Sscanf(envBatch, "%d", &batchSize); err == nil && batch == 1 {
-			// Successfully parsed
-		}
+		promptCmd = "claude"
 	}
 
 	return &Client{
 		promptCommand: promptCmd,
-		batchSize:     batchSize,
 	}
 }
 
@@ -64,60 +52,7 @@ type CategoryAnalysisResult struct {
 	Suggestions []CategorySuggestion `json:"suggestions"`
 }
 
-// IdentifyTransfers uses LLM to identify inter-account transfers
 func (c *Client) IdentifyTransfers(ctx context.Context, transactions []TransactionData, accounts []AccountData) (*TransferAnalysisResult, error) {
-	// Handle large transaction sets with batching
-	batchSize := c.calculateOptimalBatchSize(transactions, "transfer")
-
-	if len(transactions) <= batchSize {
-		// Small enough to process in one batch
-		return c.identifyTransfersBatch(ctx, transactions, accounts)
-	}
-
-	// Process in overlapping batches for transfer identification
-	overlap := c.calculateOverlapSize(batchSize)
-	step := batchSize - overlap
-	fmt.Printf("Processing %d transactions in overlapping batches of %d (overlap: %d)...\n", len(transactions), batchSize, overlap)
-
-	var allSuggestions []TransferSuggestion
-	processedTxIDs := make(map[string]bool) // Track processed transactions to avoid duplicates
-
-	for i := 0; i < len(transactions); i += step {
-		end := i + batchSize
-		if end > len(transactions) {
-			end = len(transactions)
-		}
-
-		batch := transactions[i:end]
-		batchNum := (i / step) + 1
-		totalBatches := ((len(transactions) - 1) / step) + 1
-		fmt.Printf("📊 Processing batch %d/%d (%d transactions, starting from #%d)...\n",
-			batchNum, totalBatches, len(batch), i+1)
-
-		result, err := c.identifyTransfersBatch(ctx, batch, accounts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to process transfer batch %d: %w", batchNum, err)
-		}
-
-		// Add suggestions, avoiding duplicates from overlapping batches
-		for _, suggestion := range result.Suggestions {
-			if !processedTxIDs[suggestion.TransactionID] {
-				allSuggestions = append(allSuggestions, suggestion)
-				processedTxIDs[suggestion.TransactionID] = true
-			}
-		}
-
-		// Break if we've processed all transactions
-		if end >= len(transactions) {
-			break
-		}
-	}
-
-	return &TransferAnalysisResult{Suggestions: allSuggestions}, nil
-}
-
-// identifyTransfersBatch processes a single batch of transactions for transfer identification
-func (c *Client) identifyTransfersBatch(ctx context.Context, transactions []TransactionData, accounts []AccountData) (*TransferAnalysisResult, error) {
 	prompt := buildTransferIdentificationPrompt(transactions, accounts)
 
 	response, err := c.runLLMCommand(ctx, prompt)
@@ -134,46 +69,8 @@ func (c *Client) identifyTransfersBatch(ctx context.Context, transactions []Tran
 	return &result, nil
 }
 
-// CategorizeTransactions uses LLM to categorize transactions based on available categories
+
 func (c *Client) CategorizeTransactions(ctx context.Context, transactions []TransactionData, categories []string) (*CategoryAnalysisResult, error) {
-	// Handle large transaction sets with batching
-	batchSize := c.calculateOptimalBatchSize(transactions, "categorize")
-
-	if len(transactions) <= batchSize {
-		// Small enough to process in one batch
-		return c.categorizeTransactionsBatch(ctx, transactions, categories)
-	}
-
-	// Process in batches
-	fmt.Printf("Processing %d transactions in batches of %d...\n", len(transactions), batchSize)
-
-	var allSuggestions []CategorySuggestion
-
-	for i := 0; i < len(transactions); i += batchSize {
-		end := i + batchSize
-		if end > len(transactions) {
-			end = len(transactions)
-		}
-
-		batch := transactions[i:end]
-		fmt.Printf("📊 Processing batch %d/%d (%d transactions)...\n",
-			(i/batchSize)+1, (len(transactions)+batchSize-1)/batchSize, len(batch))
-
-		result, err := c.categorizeTransactionsBatch(ctx, batch, categories)
-		if err != nil {
-			fmt.Printf("❌ Batch %d failed: %v\n", (i/batchSize)+1, err)
-			fmt.Printf("   Skipping %d transactions in this batch\n", len(batch))
-			continue // Skip failed batches instead of failing completely
-		}
-
-		allSuggestions = append(allSuggestions, result.Suggestions...)
-	}
-
-	return &CategoryAnalysisResult{Suggestions: allSuggestions}, nil
-}
-
-// categorizeTransactionsBatch processes a single batch of transactions for categorization
-func (c *Client) categorizeTransactionsBatch(ctx context.Context, transactions []TransactionData, categories []string) (*CategoryAnalysisResult, error) {
 	prompt := buildCategorizationPrompt(transactions, categories)
 
 	response, err := c.runLLMCommand(ctx, prompt)
@@ -189,6 +86,7 @@ func (c *Client) categorizeTransactionsBatch(ctx context.Context, transactions [
 
 	return &result, nil
 }
+
 
 // runLLMCommand executes the configured LLM command with the given prompt
 func (c *Client) runLLMCommand(ctx context.Context, prompt string) (string, error) {
@@ -395,24 +293,3 @@ func PromptForApproval(message string) (bool, error) {
 	return false, scanner.Err()
 }
 
-// calculateOptimalBatchSize returns the fixed batch size
-func (c *Client) calculateOptimalBatchSize(transactions []TransactionData, operation string) int {
-	return c.batchSize
-}
-
-// calculateOverlapSize determines how much batches should overlap for transfer identification
-func (c *Client) calculateOverlapSize(batchSize int) int {
-	// For transfer identification, we want reasonable overlap to catch transfer pairs
-	// that might be split across batch boundaries
-	overlap := batchSize / 3 // 33% overlap - good balance
-	if overlap < 5 {
-		overlap = 5 // Minimum 5 transactions overlap
-	}
-	if overlap >= batchSize {
-		overlap = batchSize - 1 // Ensure overlap is less than batch size
-	}
-	if overlap > 25 {
-		overlap = 25 // Cap at 25 transactions for very large batches
-	}
-	return overlap
-}
