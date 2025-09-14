@@ -12,6 +12,7 @@ import (
 
 var Accounts = &Z.Cmd{
 	Name:    "accounts",
+	Aliases: []string{"account", "acc", "a", "act"},
 	Summary: "Manage user accounts and account types",
 	Commands: []*Z.Cmd{
 		help.Cmd,
@@ -43,6 +44,7 @@ var AccountsNickname = &Z.Cmd{
 
 var AccountsList = &Z.Cmd{
 	Name:     "list",
+	Aliases:  []string{"ls", "l"},
 	Summary:  "Show all accounts with their current types",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {

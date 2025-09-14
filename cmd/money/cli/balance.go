@@ -18,6 +18,7 @@ import (
 
 var Balance = &Z.Cmd{
 	Name:     "balance",
+	Aliases:  []string{"bal", "b"},
 	Summary:  "Show current balance of all accounts and net worth with trending graph",
 	Usage:    "[--days|-d <number>]",
 	Commands: []*Z.Cmd{help.Cmd},
@@ -120,6 +121,9 @@ var Balance = &Z.Cmd{
 				institutionName = org.Name
 			}
 
+			// Truncate institution name if too long
+			institutionName = truncateString(institutionName, 15)
+
 			fmt.Fprintf(w, "%s %s\t%s\t%s\t%s\n",
 				typeIcon, strings.Title(accountType), institutionName, account.DisplayName(), balanceStr)
 			totalNetWorth += int64(account.Balance)
@@ -133,6 +137,17 @@ var Balance = &Z.Cmd{
 
 		return nil
 	},
+}
+
+// truncateString truncates a string to maxLength characters, adding "..." if truncated
+func truncateString(s string, maxLength int) string {
+	if len(s) <= maxLength {
+		return s
+	}
+	if maxLength <= 3 {
+		return s[:maxLength]
+	}
+	return s[:maxLength-3] + "..."
 }
 
 // formatCurrency converts cents to dollars and formats with currency symbol and thousands separators

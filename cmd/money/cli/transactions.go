@@ -57,6 +57,7 @@ func colorizeAmount(amount int, amountStr string, width int) string {
 
 var Transactions = &Z.Cmd{
 	Name:    "transactions",
+	Aliases: []string{"transaction", "tx", "t"},
 	Summary: "Manage and categorize transactions",
 	Commands: []*Z.Cmd{
 		help.Cmd,
@@ -68,6 +69,7 @@ var Transactions = &Z.Cmd{
 
 var TransactionsList = &Z.Cmd{
 	Name:    "list",
+	Aliases: []string{"ls", "l"},
 	Summary: "List transactions with optional filtering",
 	Usage:   "list [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--account <account-id>]",
 	Commands: []*Z.Cmd{help.Cmd},
@@ -189,6 +191,7 @@ var TransactionsList = &Z.Cmd{
 
 var Categorize = &Z.Cmd{
 	Name:     "categorize",
+	Aliases:  []string{"cat", "c"},
 	Summary:  "Manage transaction categorization",
 	Commands: []*Z.Cmd{
 		help.Cmd,

@@ -14,6 +14,7 @@ import (
 
 var Fetch = &Z.Cmd{
 	Name:     "fetch",
+	Aliases:  []string{"f", "sync"},
 	Summary:  "Sync latest data from SimpleFIN",
 	Usage:    "[--days|-d <number>] [--all|-a]",
 	Description: `
