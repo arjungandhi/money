@@ -23,10 +23,15 @@
   - `money accounts type clear <account-id>`: clear account type (set to unset)
 - `money costs`: shows a breakdown of all costs by category for a given time period (default this month)
 - `money income`: shows a breakdown of all income by category for a given time period (default this month)
-- `money transactions categorize`: interactively categorize uncategorized transactions via llm.
-    - transactions when fetched from simplefin are uncategorized
-    - user can run this command to use a llm to categorize them
-    - user can review and adjust categories as needed
+- `money transactions`: manage and view transactions 
+    - `money transactions list [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--account <account-id>] [--category <category-name>]`: list transactions with optional filtering by date range, account, or category
+    - `money transactions categorize`: interactively categorize uncategorized transactions via llm.
+        - transactions when fetched from simplefin are uncategorized
+        - user can run this command to use a llm to categorize them
+        - user can review and adjust categories as needed
+        - `money transactions categorize modify <transaction-id> <category-name>`: manually set or change the category of a specific transaction
+        - `money transactions categorize clear <transaction-id>`: clear the category of a specific transaction (set to uncategorized)
+         
 
 # Tech Stack
 1. language: Go

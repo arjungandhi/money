@@ -443,17 +443,143 @@ func (db *DB) SaveTransaction(id, accountID, posted string, amount int, descript
 }
 
 func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Transaction, error) {
-	// TODO: Retrieve transactions for account in date range
-	return nil, nil
+	var query string
+	var args []interface{}
+
+	if accountID != "" {
+		if startDate != "" && endDate != "" {
+			query = `
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+				FROM transactions t
+				WHERE t.account_id = ? AND t.posted >= ? AND t.posted <= ?
+				ORDER BY t.posted DESC`
+			args = []interface{}{accountID, startDate, endDate}
+		} else {
+			query = `
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+				FROM transactions t
+				WHERE t.account_id = ?
+				ORDER BY t.posted DESC`
+			args = []interface{}{accountID}
+		}
+	} else {
+		if startDate != "" && endDate != "" {
+			query = `
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+				FROM transactions t
+				WHERE t.posted >= ? AND t.posted <= ?
+				ORDER BY t.posted DESC`
+			args = []interface{}{startDate, endDate}
+		} else {
+			query = `
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+				FROM transactions t
+				ORDER BY t.posted DESC`
+			args = []interface{}{}
+		}
+	}
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var transactions []Transaction
+	for rows.Next() {
+		var t Transaction
+		var categoryID sql.NullInt64
+
+		err := rows.Scan(
+			&t.ID,
+			&t.AccountID,
+			&t.Posted,
+			&t.Amount,
+			&t.Description,
+			&t.Pending,
+			&categoryID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+
+		if categoryID.Valid {
+			catID := int(categoryID.Int64)
+			t.CategoryID = &catID
+		}
+
+		transactions = append(transactions, t)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating transactions: %w", err)
+	}
+
+	return transactions, nil
 }
 
 func (db *DB) GetUncategorizedTransactions() ([]Transaction, error) {
-	// TODO: Retrieve transactions without category assignments
-	return nil, nil
+	query := `
+		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
+		FROM transactions t
+		WHERE t.category_id IS NULL
+		ORDER BY t.posted DESC`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query uncategorized transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var transactions []Transaction
+	for rows.Next() {
+		var t Transaction
+		var categoryID sql.NullInt64
+
+		err := rows.Scan(
+			&t.ID,
+			&t.AccountID,
+			&t.Posted,
+			&t.Amount,
+			&t.Description,
+			&t.Pending,
+			&categoryID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan uncategorized transaction: %w", err)
+		}
+
+		transactions = append(transactions, t)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating uncategorized transactions: %w", err)
+	}
+
+	return transactions, nil
 }
 
 func (db *DB) UpdateTransactionCategory(transactionID string, categoryID int) error {
-	// TODO: Update transaction with category assignment
+	_, err := db.conn.Exec(`
+		UPDATE transactions
+		SET category_id = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		categoryID, transactionID)
+	if err != nil {
+		return fmt.Errorf("failed to update transaction category: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) ClearTransactionCategory(transactionID string) error {
+	_, err := db.conn.Exec(`
+		UPDATE transactions
+		SET category_id = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		transactionID)
+	if err != nil {
+		return fmt.Errorf("failed to clear transaction category: %w", err)
+	}
 	return nil
 }
 
@@ -469,13 +595,76 @@ func (db *DB) TransactionExists(id string) (bool, error) {
 
 // Category methods
 func (db *DB) SaveCategory(name, categoryType string) (int, error) {
-	// TODO: Save category and return ID
-	return 0, nil
+	// Validate category type
+	if categoryType != "income" && categoryType != "expense" {
+		return 0, fmt.Errorf("invalid category type: %s. Must be 'income' or 'expense'", categoryType)
+	}
+
+	// Use INSERT OR IGNORE to avoid duplicate categories, then get the ID
+	_, err := db.conn.Exec(`
+		INSERT OR IGNORE INTO categories (name, type)
+		VALUES (?, ?)`,
+		name, categoryType)
+	if err != nil {
+		return 0, fmt.Errorf("failed to insert category: %w", err)
+	}
+
+	// Get the category ID
+	var id int
+	err = db.conn.QueryRow(`
+		SELECT id FROM categories
+		WHERE name = ? AND type = ?`,
+		name, categoryType).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get category ID: %w", err)
+	}
+
+	return id, nil
 }
 
 func (db *DB) GetCategories() ([]Category, error) {
-	// TODO: Retrieve all categories
-	return nil, nil
+	query := `
+		SELECT id, name, type
+		FROM categories
+		ORDER BY type, name`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query categories: %w", err)
+	}
+	defer rows.Close()
+
+	var categories []Category
+	for rows.Next() {
+		var c Category
+		err := rows.Scan(&c.ID, &c.Name, &c.Type)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan category: %w", err)
+		}
+		categories = append(categories, c)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating categories: %w", err)
+	}
+
+	return categories, nil
+}
+
+func (db *DB) GetCategoryByID(categoryID int) (*Category, error) {
+	var c Category
+	err := db.conn.QueryRow(`
+		SELECT id, name, type
+		FROM categories
+		WHERE id = ?`,
+		categoryID).Scan(&c.ID, &c.Name, &c.Type)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("category not found: %d", categoryID)
+		}
+		return nil, fmt.Errorf("failed to get category: %w", err)
+	}
+	return &c, nil
 }
 
 // Balance History methods

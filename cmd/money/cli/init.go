@@ -17,18 +17,22 @@ var Init = &Z.Cmd{
 	Name:     "init",
 	Summary:  "Initialize SimpleFIN credentials and setup",
 	Commands: []*Z.Cmd{help.Cmd},
-	Usage:   "init",
+	Usage:   "init [setup-token]",
 	Description: `
 Initialize the money CLI by setting up SimpleFIN credentials.
 
 This command will:
-1. Prompt you for a SimpleFIN setup token
-2. Exchange the token for permanent access credentials 
+1. Use the provided setup token or prompt you for one
+2. Exchange the token for permanent access credentials
 3. Store the credentials securely in the local database
 4. Test the connection to verify setup
 
 You can get a setup token from your financial institution's
 SimpleFIN portal or bridge service.
+
+Examples:
+  money init                                    # Interactive mode
+  money init aHR0cHM6Ly9icmlkZ2Uuc2ltcGxlZmlu...  # Non-interactive mode
 `,
 	Call: initCommand,
 }
@@ -63,10 +67,16 @@ func initCommand(cmd *Z.Cmd, args ...string) error {
 		fmt.Println()
 	}
 
-	// Prompt for SimpleFIN setup token
-	setupToken, err := promptForSetupToken()
-	if err != nil {
-		return fmt.Errorf("failed to get setup token: %w", err)
+	// Get SimpleFIN setup token from args or prompt
+	var setupToken string
+	if len(args) > 0 {
+		setupToken = args[0]
+	} else {
+		var err error
+		setupToken, err = promptForSetupToken()
+		if err != nil {
+			return fmt.Errorf("failed to get setup token: %w", err)
+		}
 	}
 
 	// No validation needed - let SimpleFIN client handle it

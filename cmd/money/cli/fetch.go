@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	Z "github.com/rwxrob/bonzai/z"
@@ -14,10 +15,40 @@ import (
 var Fetch = &Z.Cmd{
 	Name:     "fetch",
 	Summary:  "Sync latest data from SimpleFIN",
+	Usage:    "[--days|-d <number>] [--all|-a]",
+	Description: `
+Sync account and transaction data from SimpleFIN.
+
+By default, fetches complete transaction history. Use --days to limit
+to a specific number of recent days.
+
+Examples:
+  money fetch           # Complete history (default)
+  money fetch -d 7      # Last 7 days only
+  money fetch --days 30 # Last 30 days only
+  money fetch --all     # Complete history (explicit)
+`,
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		fmt.Println("Fetching data from SimpleFIN...")
-		
+
+		// Parse flags - default to fetching ALL transactions
+		days := 30        // Only used if --days is specified
+		fetchAll := true  // Default to fetching all transactions
+
+		// Override default if specific flags are provided
+		for i, arg := range args {
+			switch {
+			case (arg == "--days" || arg == "-d") && i+1 < len(args):
+				if parsedDays, err := strconv.Atoi(args[i+1]); err == nil && parsedDays > 0 {
+					days = parsedDays
+					fetchAll = false // Switch to days mode when --days is specified
+				}
+			case arg == "--all" || arg == "-a":
+				fetchAll = true
+			}
+		}
+
 		// 1. Initialize database connection
 		db, err := database.New()
 		if err != nil {
@@ -33,9 +64,23 @@ var Fetch = &Z.Cmd{
 
 		// 3. Create SimpleFIN client and fetch data
 		client := simplefin.NewClient(accessURL, username, password)
-		
+
 		fmt.Println("Connecting to SimpleFIN API...")
-		accountsData, err := client.GetAccounts()
+
+		// Set up options based on arguments
+		var options *simplefin.AccountsOptions
+		if fetchAll {
+			fmt.Println("Fetching complete transaction history...")
+			options = nil // No date filtering for complete history
+		} else {
+			startDate := time.Now().AddDate(0, 0, -days)
+			fmt.Printf("Fetching transactions from the last %d days...\n", days)
+			options = &simplefin.AccountsOptions{
+				StartDate: &startDate,
+			}
+		}
+
+		accountsData, err := client.GetAccountsWithOptions(options)
 		if err != nil {
 			return fmt.Errorf("failed to fetch account data from SimpleFIN: %w", err)
 		}

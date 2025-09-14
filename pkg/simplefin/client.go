@@ -123,16 +123,62 @@ func (c *Client) ExchangeToken(setupToken string) (accessURL, username, password
 	return accessURL, username, password, nil
 }
 
+// AccountsOptions contains optional parameters for GetAccounts requests
+type AccountsOptions struct {
+	StartDate    *time.Time // Start date for transaction filtering
+	EndDate      *time.Time // End date for transaction filtering
+	Pending      *bool      // Include pending transactions
+	AccountID    string     // Filter specific account
+	BalancesOnly bool       // Fetch balances only (faster)
+}
+
 func (c *Client) GetAccounts() (*AccountsResponse, error) {
+	return c.GetAccountsWithOptions(nil)
+}
+
+func (c *Client) GetAccountsWithOptions(opts *AccountsOptions) (*AccountsResponse, error) {
 	if c.accessURL == "" {
 		return nil, fmt.Errorf("access URL not set - call ExchangeToken first or create client with credentials")
 	}
 
 	// Build the accounts endpoint URL
-	accountsURL := strings.TrimSuffix(c.accessURL, "/") + "/accounts"
+	baseURL := strings.TrimSuffix(c.accessURL, "/") + "/accounts"
+
+	// Parse base URL to add query parameters
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse accounts URL: %w", err)
+	}
+
+	// Add query parameters if options provided
+	if opts != nil {
+		query := parsedURL.Query()
+
+		if opts.StartDate != nil {
+			query.Set("start-date", fmt.Sprintf("%d", opts.StartDate.Unix()))
+		}
+		if opts.EndDate != nil {
+			query.Set("end-date", fmt.Sprintf("%d", opts.EndDate.Unix()))
+		}
+		if opts.Pending != nil {
+			if *opts.Pending {
+				query.Set("pending", "1")
+			} else {
+				query.Set("pending", "0")
+			}
+		}
+		if opts.AccountID != "" {
+			query.Set("account", opts.AccountID)
+		}
+		if opts.BalancesOnly {
+			query.Set("balances-only", "1")
+		}
+
+		parsedURL.RawQuery = query.Encode()
+	}
 
 	// Create the request
-	req, err := http.NewRequest("GET", accountsURL, nil)
+	req, err := http.NewRequest("GET", parsedURL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create accounts request: %w", err)
 	}
@@ -169,6 +215,11 @@ func (c *Client) GetAccounts() (*AccountsResponse, error) {
 		return nil, fmt.Errorf("failed to parse accounts JSON response: %w", err)
 	}
 
+	// Log API errors but don't fail - some institutions may timeout but others work
+	if len(accountsResponse.Errors) > 0 {
+		fmt.Printf("Warning - some institutions had errors: %v\n", accountsResponse.Errors)
+	}
+
 	return &accountsResponse, nil
 }
 
@@ -194,25 +245,28 @@ type AccountsResponse struct {
 }
 
 type Account struct {
-	ID               string        `json:"id"`
-	Name             string        `json:"name"`
-	Org              Organization  `json:"org"`
-	Currency         string        `json:"currency"`
-	Balance          string        `json:"balance"`           // Amount as string
-	AvailableBalance *string       `json:"available-balance,omitempty"`
-	BalanceDate      *int64        `json:"balance-date,omitempty"` // Unix timestamp
-	Transactions     []Transaction `json:"transactions"`
-	Holdings         []Holding     `json:"holdings,omitempty"`
+	ID               string                 `json:"id"`
+	Name             string                 `json:"name"`
+	Org              Organization           `json:"org"`
+	Currency         string                 `json:"currency"`
+	Balance          string                 `json:"balance"`           // Amount as string
+	AvailableBalance *string                `json:"available-balance,omitempty"`
+	BalanceDate      *int64                 `json:"balance-date,omitempty"` // Unix timestamp
+	Transactions     []Transaction          `json:"transactions"`
+	Holdings         []Holding              `json:"holdings,omitempty"`
+	Extra            map[string]interface{} `json:"extra,omitempty"` // Additional fields
 }
 
 type Transaction struct {
-	ID          string `json:"id"`
-	Posted      int64  `json:"posted"`     // Unix timestamp  
-	Amount      string `json:"amount"`     // Amount as string
-	Description string `json:"description"`
-	Memo        string `json:"memo,omitempty"`
-	Payee       string `json:"payee,omitempty"`
-	Pending     *bool  `json:"pending,omitempty"`
+	ID           string                 `json:"id"`
+	Posted       int64                  `json:"posted"`       // Unix timestamp
+	Amount       string                 `json:"amount"`       // Amount as string
+	Description  string                 `json:"description"`
+	Memo         string                 `json:"memo,omitempty"`
+	Payee        string                 `json:"payee,omitempty"`
+	Pending      *bool                  `json:"pending,omitempty"`
+	TransactedAt *int64                 `json:"transacted_at,omitempty"` // Unix timestamp
+	Extra        map[string]interface{} `json:"extra,omitempty"`         // Additional fields
 }
 
 type Organization struct {
