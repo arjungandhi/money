@@ -5,14 +5,16 @@ import (
 	"time"
 
 	Z "github.com/rwxrob/bonzai/z"
+	"github.com/rwxrob/help"
 
 	"github.com/arjungandhi/money/pkg/database"
 	"github.com/arjungandhi/money/pkg/simplefin"
 )
 
 var Fetch = &Z.Cmd{
-	Name:    "fetch",
-	Summary: "Sync latest data from SimpleFIN",
+	Name:     "fetch",
+	Summary:  "Sync latest data from SimpleFIN",
+	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		fmt.Println("Fetching data from SimpleFIN...")
 		
@@ -87,11 +89,17 @@ var Fetch = &Z.Cmd{
 				balanceDate = simplefin.UnixTimestampToISO(*account.BalanceDate)
 			}
 
+			// Normalize currency - default empty currencies to USD
+			currency := account.Currency
+			if currency == "" {
+				currency = "USD"
+			}
+
 			if err := db.SaveAccount(
 				account.ID,
 				account.Org.ID, // Use embedded organization ID
 				account.Name,
-				account.Currency,
+				currency,
 				balance,
 				availableBalance,
 				balanceDate,

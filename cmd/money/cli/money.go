@@ -13,6 +13,7 @@ var Cmd = &Z.Cmd{
 		Init,
 		Fetch,
 		Balance,
+		Accounts,
 		Costs,
 		Income,
 		Transactions,

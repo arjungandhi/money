@@ -71,6 +71,38 @@ func (db *DB) runMigrations() error {
 		if err != nil {
 			return fmt.Errorf("failed to execute schema: %w", err)
 		}
+	} else {
+		// Run incremental migrations for existing databases
+		err = db.runIncrementalMigrations()
+		if err != nil {
+			return fmt.Errorf("failed to run incremental migrations: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (db *DB) runIncrementalMigrations() error {
+	// Check if account_type column exists
+	var columnExists int
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM pragma_table_info('accounts')
+		WHERE name = 'account_type'
+	`).Scan(&columnExists)
+	if err != nil {
+		return fmt.Errorf("failed to check account_type column: %w", err)
+	}
+
+	// Add account_type column if it doesn't exist
+	if columnExists == 0 {
+		_, err = db.conn.Exec(`
+			ALTER TABLE accounts 
+			ADD COLUMN account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other'))
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add account_type column: %w", err)
+		}
 	}
 
 	return nil
@@ -194,11 +226,23 @@ func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availab
 		availableBalanceVal = sql.NullInt64{Int64: int64(*availableBalance), Valid: true}
 	}
 	
+	// Use INSERT OR IGNORE first, then UPDATE to preserve account_type
 	_, err := db.conn.Exec(`
-		INSERT OR REPLACE INTO accounts (id, org_id, name, currency, balance, available_balance, balance_date, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		INSERT OR IGNORE INTO accounts (id, org_id, name, currency, balance, available_balance, balance_date, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		id, orgID, name, currency, balance, availableBalanceVal,
 		sql.NullString{String: balanceDate, Valid: balanceDate != ""})
+	if err != nil {
+		return fmt.Errorf("failed to insert account: %w", err)
+	}
+	
+	// Now update existing records (preserves account_type if already set)
+	_, err = db.conn.Exec(`
+		UPDATE accounts 
+		SET org_id = ?, name = ?, currency = ?, balance = ?, available_balance = ?, balance_date = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		orgID, name, currency, balance, availableBalanceVal,
+		sql.NullString{String: balanceDate, Valid: balanceDate != ""}, id)
 	if err != nil {
 		return fmt.Errorf("failed to save account: %w", err)
 	}
@@ -207,7 +251,7 @@ func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availab
 
 func (db *DB) GetAccounts() ([]Account, error) {
 	query := `
-		SELECT a.id, a.org_id, a.name, a.currency, a.balance, a.available_balance, a.balance_date
+		SELECT a.id, a.org_id, a.name, a.currency, a.balance, a.available_balance, a.balance_date, a.account_type
 		FROM accounts a
 		ORDER BY a.org_id, a.name`
 
@@ -222,6 +266,7 @@ func (db *DB) GetAccounts() ([]Account, error) {
 		var account Account
 		var availableBalance sql.NullInt64
 		var balanceDate sql.NullString
+		var accountType sql.NullString
 
 		err := rows.Scan(
 			&account.ID,
@@ -231,6 +276,7 @@ func (db *DB) GetAccounts() ([]Account, error) {
 			&account.Balance,
 			&availableBalance,
 			&balanceDate,
+			&accountType,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan account: %w", err)
@@ -244,6 +290,9 @@ func (db *DB) GetAccounts() ([]Account, error) {
 		if balanceDate.Valid {
 			account.BalanceDate = &balanceDate.String
 		}
+		if accountType.Valid {
+			account.AccountType = &accountType.String
+		}
 
 		accounts = append(accounts, account)
 	}
@@ -253,6 +302,87 @@ func (db *DB) GetAccounts() ([]Account, error) {
 	}
 
 	return accounts, nil
+}
+
+// Account type methods
+func (db *DB) SetAccountType(accountID, accountType string) error {
+	// Validate account type
+	validTypes := []string{"checking", "savings", "credit", "investment", "loan", "other"}
+	isValid := false
+	for _, validType := range validTypes {
+		if accountType == validType {
+			isValid = true
+			break
+		}
+	}
+	if !isValid {
+		return fmt.Errorf("invalid account type: %s. Valid types are: %v", accountType, validTypes)
+	}
+
+	_, err := db.conn.Exec(`
+		UPDATE accounts 
+		SET account_type = ?, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = ?`,
+		accountType, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to set account type: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) ClearAccountType(accountID string) error {
+	_, err := db.conn.Exec(`
+		UPDATE accounts 
+		SET account_type = NULL, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = ?`,
+		accountID)
+	if err != nil {
+		return fmt.Errorf("failed to clear account type: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) GetAccountByID(accountID string) (*Account, error) {
+	query := `
+		SELECT a.id, a.org_id, a.name, a.currency, a.balance, a.available_balance, a.balance_date, a.account_type
+		FROM accounts a
+		WHERE a.id = ?`
+
+	var account Account
+	var availableBalance sql.NullInt64
+	var balanceDate sql.NullString
+	var accountType sql.NullString
+
+	err := db.conn.QueryRow(query, accountID).Scan(
+		&account.ID,
+		&account.OrgID,
+		&account.Name,
+		&account.Currency,
+		&account.Balance,
+		&availableBalance,
+		&balanceDate,
+		&accountType,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("account not found: %s", accountID)
+		}
+		return nil, fmt.Errorf("failed to get account: %w", err)
+	}
+
+	// Handle nullable fields
+	if availableBalance.Valid {
+		balance := int(availableBalance.Int64)
+		account.AvailableBalance = &balance
+	}
+	if balanceDate.Valid {
+		account.BalanceDate = &balanceDate.String
+	}
+	if accountType.Valid {
+		account.AccountType = &accountType.String
+	}
+
+	return &account, nil
 }
 
 // Transaction methods
@@ -314,6 +444,7 @@ type Account struct {
 	Balance          int
 	AvailableBalance *int
 	BalanceDate      *string
+	AccountType      *string
 }
 
 type Transaction struct {

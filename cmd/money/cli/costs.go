@@ -4,13 +4,15 @@ import (
 	"fmt"
 
 	Z "github.com/rwxrob/bonzai/z"
+	"github.com/rwxrob/help"
 
 	"github.com/arjungandhi/money/pkg/database"
 )
 
 var Costs = &Z.Cmd{
-	Name:    "costs",
-	Summary: "Show breakdown of costs by category for time period",
+	Name:     "costs",
+	Summary:  "Show breakdown of costs by category for time period",
+	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		// TODO: Implement costs logic
 		// 1. Parse time period (default: this month)

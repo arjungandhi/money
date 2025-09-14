@@ -1,0 +1,185 @@
+package cli
+
+import (
+	"fmt"
+	"strings"
+
+	Z "github.com/rwxrob/bonzai/z"
+	"github.com/rwxrob/help"
+
+	"github.com/arjungandhi/money/pkg/database"
+)
+
+var Accounts = &Z.Cmd{
+	Name:    "accounts",
+	Summary: "Manage user accounts and account types",
+	Commands: []*Z.Cmd{
+		help.Cmd,
+		AccountsList,
+		AccountsType,
+	},
+}
+
+var AccountsType = &Z.Cmd{
+	Name:    "type",
+	Summary: "Manage account types for better balance organization",
+	Commands: []*Z.Cmd{
+		help.Cmd,
+		AccountsTypeSet,
+		AccountsTypeClear,
+	},
+}
+
+var AccountsList = &Z.Cmd{
+	Name:     "list",
+	Summary:  "Show all accounts with their current types",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		db, err := database.New()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		accounts, err := db.GetAccounts()
+		if err != nil {
+			return fmt.Errorf("failed to get accounts: %w", err)
+		}
+
+		if len(accounts) == 0 {
+			fmt.Println("No accounts found. Run 'money fetch' to sync your financial data.")
+			return nil
+		}
+
+		// Get organizations for display
+		orgs, err := db.GetOrganizations()
+		if err != nil {
+			return fmt.Errorf("failed to get organizations: %w", err)
+		}
+
+		orgMap := make(map[string]database.Organization)
+		for _, org := range orgs {
+			orgMap[org.ID] = org
+		}
+
+		// Display accounts with types
+		fmt.Println("Account Types")
+		fmt.Println(strings.Repeat("=", 80))
+		fmt.Printf("%-12s %-25s %-30s %s\n", "Type", "Organization", "Account Name", "Account ID")
+		fmt.Println(strings.Repeat("-", 80))
+
+		for _, account := range accounts {
+			accountType := "unset"
+			if account.AccountType != nil {
+				accountType = *account.AccountType
+			}
+
+			orgName := account.OrgID
+			if org, exists := orgMap[account.OrgID]; exists {
+				orgName = org.Name
+			}
+
+			// Truncate long names for better display
+			if len(orgName) > 25 {
+				orgName = orgName[:22] + "..."
+			}
+			if len(account.Name) > 30 {
+				account.Name = account.Name[:27] + "..."
+			}
+
+			fmt.Printf("%-12s %-25s %-30s %s\n", accountType, orgName, account.Name, account.ID)
+		}
+
+		fmt.Println()
+		fmt.Println("Available account types: checking, savings, credit, investment, loan, other")
+		fmt.Println("Use 'money accounts type set <account-id> <type>' to set an account type")
+
+		return nil
+	},
+}
+
+var AccountsTypeSet = &Z.Cmd{
+	Name:     "set",
+	Summary:  "Set account type for an account",
+	Usage:    "<account-id> <type>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) != 2 {
+			return fmt.Errorf("usage: %s <account-id> <type>", cmd.Usage)
+		}
+
+		accountID := args[0]
+		accountType := args[1]
+
+		// Validate account type
+		validTypes := []string{"checking", "savings", "credit", "investment", "loan", "other"}
+		isValid := false
+		for _, validType := range validTypes {
+			if accountType == validType {
+				isValid = true
+				break
+			}
+		}
+		if !isValid {
+			return fmt.Errorf("invalid account type: %s. Valid types are: %v", accountType, validTypes)
+		}
+
+		db, err := database.New()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		// Check if account exists
+		account, err := db.GetAccountByID(accountID)
+		if err != nil {
+			return err
+		}
+
+		// Set the account type
+		err = db.SetAccountType(accountID, accountType)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Successfully set account type '%s' for account: %s (%s)\n", accountType, account.Name, accountID)
+
+		return nil
+	},
+}
+
+var AccountsTypeClear = &Z.Cmd{
+	Name:     "clear",
+	Summary:  "Clear account type for an account (set to unset)",
+	Usage:    "<account-id>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) != 1 {
+			return fmt.Errorf("usage: %s <account-id>", cmd.Usage)
+		}
+
+		accountID := args[0]
+
+		db, err := database.New()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		// Check if account exists
+		account, err := db.GetAccountByID(accountID)
+		if err != nil {
+			return err
+		}
+
+		// Clear the account type
+		err = db.ClearAccountType(accountID)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Successfully cleared account type for account: %s (%s)\n", account.Name, accountID)
+
+		return nil
+	},
+}

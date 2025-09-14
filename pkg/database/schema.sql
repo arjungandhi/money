@@ -25,6 +25,7 @@ CREATE TABLE accounts (
     balance INTEGER NOT NULL,  -- Store as cents to avoid floating point issues
     available_balance INTEGER,
     balance_date DATETIME,
+    account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (org_id) REFERENCES organizations(id)

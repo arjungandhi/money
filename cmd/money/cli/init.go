@@ -7,14 +7,16 @@ import (
 	"strings"
 
 	Z "github.com/rwxrob/bonzai/z"
+	"github.com/rwxrob/help"
 
 	"github.com/arjungandhi/money/pkg/database"
 	"github.com/arjungandhi/money/pkg/simplefin"
 )
 
 var Init = &Z.Cmd{
-	Name:    "init",
-	Summary: "Initialize SimpleFIN credentials and setup",
+	Name:     "init",
+	Summary:  "Initialize SimpleFIN credentials and setup",
+	Commands: []*Z.Cmd{help.Cmd},
 	Usage:   "init",
 	Description: `
 Initialize the money CLI by setting up SimpleFIN credentials.

@@ -1,7 +1,10 @@
 # money design doc
 
 # Core User Commands
-- `money init`: initial setup command that prompts user to get SimpleFIN token from SimpleFIN Bridge, exchanges it for Access URL, and stores credentials locally
+- `money init`: initial setup command that prompts user for base64-encoded SimpleFIN setup token, exchanges it for Access URL, and stores credentials locally
+  - Accepts base64-encoded setup tokens (not direct URLs)
+  - No token validation - let SimpleFIN client handle errors
+  - Works with both production and beta SimpleFIN bridges
 - `money fetch`: syncs latest data from SimpleFIN and stores it to the local database
    - Uses stored Access URL from `money init` to fetch account data via GET /accounts endpoint
    - Data synced includes accounts and transactions with full history

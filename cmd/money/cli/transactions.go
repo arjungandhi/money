@@ -19,8 +19,9 @@ var Transactions = &Z.Cmd{
 }
 
 var Categorize = &Z.Cmd{
-	Name:    "categorize",
-	Summary: "Interactively categorize uncategorized transactions via LLM",
+	Name:     "categorize",
+	Summary:  "Interactively categorize uncategorized transactions via LLM",
+	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		// TODO: Implement categorization logic
 		// 1. Load uncategorized transactions from database
