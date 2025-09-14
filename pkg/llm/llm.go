@@ -176,8 +176,10 @@ ACCOUNTS:
 
 	prompt.WriteString(`
 Please analyze these transactions and identify which ones are likely inter-account transfers.
-Return your response as a JSON object with this exact format:
 
+CRITICAL: Return ONLY valid JSON with no additional text, explanations, or formatting. Do not include markdown code blocks or any other text.
+
+Expected JSON format:
 {
   "suggestions": [
     {
@@ -188,7 +190,9 @@ Return your response as a JSON object with this exact format:
   ]
 }
 
-Only include transactions where you have reasonable confidence they are transfers. Be conservative - it's better to miss some transfers than incorrectly mark regular transactions as transfers.`)
+Only include transactions where you have reasonable confidence they are transfers. Be conservative - it's better to miss some transfers than incorrectly mark regular transactions as transfers.
+
+Return ONLY the JSON object above with no additional text:`)
 
 	return prompt.String()
 }
@@ -218,8 +222,9 @@ Please categorize each transaction using ONLY the categories listed above. Consi
 2. Transaction amounts (positive = income, negative = expense)
 3. Common spending patterns and merchant types
 
-Return your response as a JSON object with this exact format:
+CRITICAL: Return ONLY valid JSON with no additional text, explanations, or formatting. Do not include markdown code blocks or any other text.
 
+Expected JSON format:
 {
   "suggestions": [
     {
@@ -237,7 +242,9 @@ Use confidence scores from 0.0 to 1.0 where:
 - 0.4-0.6 = Low confidence (best guess from available categories)
 - Below 0.4 = Don't suggest a category
 
-Only suggest categories you're reasonably confident about (0.4+).`)
+Only suggest categories you're reasonably confident about (0.4+).
+
+Return ONLY the JSON object above with no additional text:`)
 
 	return prompt.String()
 }

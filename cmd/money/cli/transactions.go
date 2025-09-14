@@ -201,7 +201,6 @@ var Categorize = &Z.Cmd{
 		CategorizeClear,
 		CategorizeTransfer,
 		CategorizeAuto,
-		CategorizeRecategorize,
 	},
 }
 
@@ -318,38 +317,26 @@ var CategorizeTransfer = &Z.Cmd{
 
 var CategorizeAuto = &Z.Cmd{
 	Name:     "auto",
-	Summary:  "Automatically categorize uncategorized transactions using LLM",
-	Usage:    "auto [--auto-approve]",
+	Summary:  "Automatically categorize transactions using LLM",
+	Usage:    "auto [--all]",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
-		autoApprove := false
+		processAll := false
 		for _, arg := range args {
-			if arg == "--auto-approve" {
-				autoApprove = true
+			if arg == "--all" {
+				processAll = true
 				break
 			}
 		}
-		return autoCategorizeTransactions(autoApprove)
+
+		if processAll {
+			return recategorizeAllTransactions()
+		} else {
+			return autoCategorizeTransactions()
+		}
 	},
 }
 
-var CategorizeRecategorize = &Z.Cmd{
-	Name:     "recategorize",
-	Aliases:  []string{"recat"},
-	Summary:  "Recategorize all transactions (both categorized and uncategorized) using LLM",
-	Usage:    "recategorize [--auto-approve]",
-	Commands: []*Z.Cmd{help.Cmd},
-	Call: func(cmd *Z.Cmd, args ...string) error {
-		autoApprove := false
-		for _, arg := range args {
-			if arg == "--auto-approve" {
-				autoApprove = true
-				break
-			}
-		}
-		return recategorizeAllTransactions(autoApprove)
-	},
-}
 
 var Category = &Z.Cmd{
 	Name:     "category",
@@ -470,7 +457,7 @@ var CategorySeed = &Z.Cmd{
 }
 
 // autoCategorizeTransactions implements the LLM-based auto-categorization logic
-func autoCategorizeTransactions(autoApprove bool) error {
+func autoCategorizeTransactions() error {
 	db, err := database.New()
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -585,7 +572,7 @@ func autoCategorizeTransactions(autoApprove bool) error {
 		fmt.Printf("   Amount: $%.2f\n", float64(transaction.Amount)/100.0)
 		fmt.Printf("   Reason: %s\n", suggestion.Reasoning)
 
-		approved, err := getApproval("Mark as transfer?", autoApprove)
+		approved, err := getApproval("Mark as transfer?", true)
 		if err != nil {
 			return fmt.Errorf("failed to get user approval: %w", err)
 		}
@@ -657,7 +644,7 @@ func autoCategorizeTransactions(autoApprove bool) error {
 		fmt.Printf("   Suggested Category: %s (confidence: %.0f%%)\n", suggestion.Category, suggestion.Confidence*100)
 		fmt.Printf("   Reason: %s\n", suggestion.Reasoning)
 
-		approved, err := getApproval(fmt.Sprintf("Categorize as '%s'?", suggestion.Category), autoApprove)
+		approved, err := getApproval(fmt.Sprintf("Categorize as '%s'?", suggestion.Category), true)
 		if err != nil {
 			return fmt.Errorf("failed to get user approval: %w", err)
 		}
@@ -698,7 +685,7 @@ func getApproval(message string, autoApprove bool) (bool, error) {
 }
 
 // recategorizeAllTransactions recategorizes ALL transactions using LLM
-func recategorizeAllTransactions(autoApprove bool) error {
+func recategorizeAllTransactions() error {
 	db, err := database.New()
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -825,7 +812,7 @@ func recategorizeAllTransactions(autoApprove bool) error {
 		fmt.Printf("   Amount: $%.2f\n", float64(transaction.Amount)/100.0)
 		fmt.Printf("   Reason: %s\n", suggestion.Reasoning)
 
-		approved, err := getApproval("Mark as transfer?", autoApprove)
+		approved, err := getApproval("Mark as transfer?", true)
 		if err != nil {
 			return fmt.Errorf("failed to get user approval: %w", err)
 		}
@@ -915,7 +902,7 @@ func recategorizeAllTransactions(autoApprove bool) error {
 		fmt.Printf("   Suggested Category: %s (confidence: %.0f%%)\n", suggestion.Category, suggestion.Confidence*100)
 		fmt.Printf("   Reason: %s\n", suggestion.Reasoning)
 
-		approved, err := getApproval(fmt.Sprintf("Categorize as '%s'?", suggestion.Category), autoApprove)
+		approved, err := getApproval(fmt.Sprintf("Categorize as '%s'?", suggestion.Category), true)
 		if err != nil {
 			return fmt.Errorf("failed to get user approval: %w", err)
 		}
