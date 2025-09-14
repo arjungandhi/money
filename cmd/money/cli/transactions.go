@@ -567,26 +567,13 @@ func autoCategorizeTransactions() error {
 			continue
 		}
 
-		// Display transaction details
-		fmt.Printf("\n💰 Transaction: %s\n", transaction.Description)
-		fmt.Printf("   Amount: $%.2f\n", float64(transaction.Amount)/100.0)
-		fmt.Printf("   Reason: %s\n", suggestion.Reasoning)
 
-		approved, err := getApproval("Mark as transfer?", true)
+		err = db.MarkTransactionAsTransfer(suggestion.TransactionID)
 		if err != nil {
-			return fmt.Errorf("failed to get user approval: %w", err)
+			return fmt.Errorf("failed to mark transaction as transfer: %w", err)
 		}
-
-		if approved {
-			err = db.MarkTransactionAsTransfer(suggestion.TransactionID)
-			if err != nil {
-				return fmt.Errorf("failed to mark transaction as transfer: %w", err)
-			}
-			fmt.Println("✅ Marked as transfer")
-			transferCount++
-		} else {
-			fmt.Println("⏭️  Skipped")
-		}
+		fmt.Printf("🔄 Transfer: %s\n", transaction.Description)
+		transferCount++
 	}
 
 	fmt.Printf("\n✅ Marked %d transactions as transfers.\n\n", transferCount)
@@ -638,34 +625,20 @@ func autoCategorizeTransactions() error {
 			continue
 		}
 
-		// Display transaction details
-		fmt.Printf("\n💸 Transaction: %s\n", transaction.Description)
-		fmt.Printf("   Amount: $%.2f\n", float64(transaction.Amount)/100.0)
-		fmt.Printf("   Suggested Category: %s (confidence: %.0f%%)\n", suggestion.Category, suggestion.Confidence*100)
-		fmt.Printf("   Reason: %s\n", suggestion.Reasoning)
 
-		approved, err := getApproval(fmt.Sprintf("Categorize as '%s'?", suggestion.Category), true)
+		// Get category ID (this will find the existing category since we're using user's categories)
+		categoryID, err := db.SaveCategory(suggestion.Category)
 		if err != nil {
-			return fmt.Errorf("failed to get user approval: %w", err)
+			return fmt.Errorf("failed to get category ID: %w", err)
 		}
 
-		if approved {
-			// Get category ID (this will find the existing category since we're using user's categories)
-			categoryID, err := db.SaveCategory(suggestion.Category)
-			if err != nil {
-				return fmt.Errorf("failed to get category ID: %w", err)
-			}
-
-			// Update transaction category
-			err = db.UpdateTransactionCategory(suggestion.TransactionID, categoryID)
-			if err != nil {
-				return fmt.Errorf("failed to update transaction category: %w", err)
-			}
-			fmt.Printf("✅ Categorized as '%s'\n", suggestion.Category)
-			categoryCount++
-		} else {
-			fmt.Println("⏭️  Skipped")
+		// Update transaction category
+		err = db.UpdateTransactionCategory(suggestion.TransactionID, categoryID)
+		if err != nil {
+			return fmt.Errorf("failed to update transaction category: %w", err)
 		}
+		fmt.Printf("💸 %s → %s\n", transaction.Description, suggestion.Category)
+		categoryCount++
 	}
 
 	fmt.Printf("\n🎉 Auto-categorization complete!\n")
@@ -675,14 +648,6 @@ func autoCategorizeTransactions() error {
 	return nil
 }
 
-// getApproval handles user approval with optional auto-approval
-func getApproval(message string, autoApprove bool) (bool, error) {
-	if autoApprove {
-		fmt.Printf("%s (auto-approved)\n", message)
-		return true, nil
-	}
-	return llm.PromptForApproval(message)
-}
 
 // recategorizeAllTransactions recategorizes ALL transactions using LLM
 func recategorizeAllTransactions() error {
@@ -807,26 +772,13 @@ func recategorizeAllTransactions() error {
 			continue
 		}
 
-		// Display transaction details
-		fmt.Printf("\n💰 Transaction: %s\n", transaction.Description)
-		fmt.Printf("   Amount: $%.2f\n", float64(transaction.Amount)/100.0)
-		fmt.Printf("   Reason: %s\n", suggestion.Reasoning)
 
-		approved, err := getApproval("Mark as transfer?", true)
+		err = db.MarkTransactionAsTransfer(suggestion.TransactionID)
 		if err != nil {
-			return fmt.Errorf("failed to get user approval: %w", err)
+			return fmt.Errorf("failed to mark transaction as transfer: %w", err)
 		}
-
-		if approved {
-			err = db.MarkTransactionAsTransfer(suggestion.TransactionID)
-			if err != nil {
-				return fmt.Errorf("failed to mark transaction as transfer: %w", err)
-			}
-			fmt.Println("✅ Marked as transfer")
-			transferCount++
-		} else {
-			fmt.Println("⏭️  Skipped")
-		}
+		fmt.Printf("🔄 Transfer: %s\n", transaction.Description)
+		transferCount++
 	}
 
 	fmt.Printf("\n✅ Marked %d transactions as transfers.\n\n", transferCount)
@@ -896,34 +848,20 @@ func recategorizeAllTransactions() error {
 			continue
 		}
 
-		// Display transaction details
-		fmt.Printf("\n💸 Transaction: %s\n", transaction.Description)
-		fmt.Printf("   Amount: $%.2f\n", float64(transaction.Amount)/100.0)
-		fmt.Printf("   Suggested Category: %s (confidence: %.0f%%)\n", suggestion.Category, suggestion.Confidence*100)
-		fmt.Printf("   Reason: %s\n", suggestion.Reasoning)
 
-		approved, err := getApproval(fmt.Sprintf("Categorize as '%s'?", suggestion.Category), true)
+		// Get category ID
+		categoryID, err := db.SaveCategory(suggestion.Category)
 		if err != nil {
-			return fmt.Errorf("failed to get user approval: %w", err)
+			return fmt.Errorf("failed to get category ID: %w", err)
 		}
 
-		if approved {
-			// Get category ID
-			categoryID, err := db.SaveCategory(suggestion.Category)
-			if err != nil {
-				return fmt.Errorf("failed to get category ID: %w", err)
-			}
-
-			// Update transaction category
-			err = db.UpdateTransactionCategory(suggestion.TransactionID, categoryID)
-			if err != nil {
-				return fmt.Errorf("failed to update transaction category: %w", err)
-			}
-			fmt.Printf("✅ Categorized as '%s'\n", suggestion.Category)
-			categoryCount++
-		} else {
-			fmt.Println("⏭️  Skipped")
+		// Update transaction category
+		err = db.UpdateTransactionCategory(suggestion.TransactionID, categoryID)
+		if err != nil {
+			return fmt.Errorf("failed to update transaction category: %w", err)
 		}
+		fmt.Printf("💸 %s → %s\n", transaction.Description, suggestion.Category)
+		categoryCount++
 	}
 
 	fmt.Printf("\n🎉 Recategorization complete!\n")
