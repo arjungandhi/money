@@ -184,19 +184,20 @@ func formatWithCommas(n int64) string {
 	if n == 0 {
 		return "0"
 	}
-	
-	// Convert to string and reverse for easier processing
+
 	str := fmt.Sprintf("%d", n)
-	result := ""
-	
-	for i, char := range str {
-		if i > 0 && (len(str)-i)%3 == 0 {
-			result += ","
+
+	// Work backwards in groups of 3
+	var parts []string
+	for i := len(str); i > 0; i -= 3 {
+		start := i - 3
+		if start < 0 {
+			start = 0
 		}
-		result += string(char)
+		parts = append([]string{str[start:i]}, parts...)
 	}
-	
-	return result
+
+	return strings.Join(parts, ",")
 }
 
 // getCurrencySymbol returns the appropriate symbol for the currency
@@ -290,16 +291,13 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 		accountTypeMap[account.ID] = accountType
 	}
 
-	// Group history by account type and date
+	// Group history by account type and date - use latest balance per account per day
+	accountDailyBalances := make(map[string]map[string]int64) // [accountID][date] = latestBalance
 	typeHistoryMap := make(map[string]map[string]int64) // [accountType][date] = totalBalance
 	dateSet := make(map[string]bool)
 
+	// First, get the latest balance per account per day
 	for _, bh := range history {
-		accountType, exists := accountTypeMap[bh.AccountID]
-		if !exists {
-			accountType = "unset"
-		}
-
 		// Parse the recorded_at timestamp and format as date
 		recordedTime, err := time.Parse("2006-01-02 15:04:05", bh.RecordedAt)
 		if err != nil {
@@ -311,12 +309,30 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 		}
 		dateStr := recordedTime.Format("2006-01-02")
 
+		if accountDailyBalances[bh.AccountID] == nil {
+			accountDailyBalances[bh.AccountID] = make(map[string]int64)
+		}
+
+		// Store the balance - since history is ordered by recorded_at ASC,
+		// later entries will overwrite earlier ones, giving us the latest balance for each day
+		accountDailyBalances[bh.AccountID][dateStr] = int64(bh.Balance)
+		dateSet[dateStr] = true
+	}
+
+	// Now aggregate by account type
+	for accountID, dailyBalances := range accountDailyBalances {
+		accountType, exists := accountTypeMap[accountID]
+		if !exists {
+			accountType = "unset"
+		}
+
 		if typeHistoryMap[accountType] == nil {
 			typeHistoryMap[accountType] = make(map[string]int64)
 		}
 
-		typeHistoryMap[accountType][dateStr] += int64(bh.Balance)
-		dateSet[dateStr] = true
+		for date, balance := range dailyBalances {
+			typeHistoryMap[accountType][date] += balance
+		}
 	}
 
 	// Convert dates to sorted slice
@@ -356,21 +372,15 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 			continue
 		}
 
-		// Prepare data for this account type
+		// Prepare data for this account type - only include dates with actual data
 		var values []float64
 		var hasData bool
 		for _, date := range dates {
 			if balance, dateExists := typeHistory[date]; dateExists {
 				values = append(values, float64(balance)/100.0) // Convert cents to dollars
 				hasData = true
-			} else {
-				// Use previous value if no data for this date
-				if len(values) > 0 {
-					values = append(values, values[len(values)-1])
-				} else {
-					values = append(values, 0)
-				}
 			}
+			// Don't pad with zeros or previous values - only use actual data points
 		}
 
 		if !hasData {
@@ -445,19 +455,16 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 				}
 			}
 
-			fmt.Printf("  %s %s: $%s%s\n",
-				typeIcon, label, formatWithCommas(int64(currentValue)), trend)
+			fmt.Printf("  %s %s: %s%s\n",
+				typeIcon, label, formatCurrency(int(currentValue*100), "USD"), trend)
 		}
 
 		// Calculate and show net worth
 		if len(allSeries) > 1 {
 			var netWorthStart, netWorthCurrent float64
-			for i, series := range allSeries {
-				// Skip credit and loan accounts from net worth (they're negative)
-				accountType := activeTypes[i]
-				if accountType == "credit" || accountType == "loan" {
-					continue
-				}
+			for _, series := range allSeries {
+				// Include all account types in net worth calculation
+				// Credit and loan balances are already negative in the data
 				netWorthStart += series[0]
 				netWorthCurrent += series[len(series)-1]
 			}
@@ -468,7 +475,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 				netWorthChangePercent = (netWorthChange / netWorthStart) * 100
 			}
 
-			fmt.Printf("\n💰 Net Worth: $%s", formatWithCommas(int64(netWorthCurrent)))
+			fmt.Printf("\n💰 Net Worth: %s", formatCurrency(int(netWorthCurrent*100), "USD"))
 			if netWorthChange > 0 {
 				fmt.Printf(" (↑ $%s, +%.1f%% over %d days)",
 					formatWithCommas(int64(netWorthChange)), netWorthChangePercent, days)

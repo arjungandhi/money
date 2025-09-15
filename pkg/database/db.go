@@ -980,6 +980,103 @@ func (db *DB) GetAllBalanceHistory(days int) ([]BalanceHistory, error) {
 	return history, nil
 }
 
+// GetTransactionsByCategory gets transactions grouped by category for costs/income analysis
+func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeTransfers bool) (map[string][]Transaction, error) {
+	var query string
+	var args []interface{}
+
+	if excludeTransfers {
+		if startDate != "" && endDate != "" {
+			query = `
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
+				       COALESCE(t.is_transfer, FALSE), t.category_id, c.name as category_name
+				FROM transactions t
+				LEFT JOIN categories c ON t.category_id = c.id
+				WHERE t.posted >= ? AND t.posted <= ? AND COALESCE(t.is_transfer, FALSE) = FALSE
+				ORDER BY t.posted DESC`
+			args = []interface{}{startDate, endDate}
+		} else {
+			query = `
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
+				       COALESCE(t.is_transfer, FALSE), t.category_id, c.name as category_name
+				FROM transactions t
+				LEFT JOIN categories c ON t.category_id = c.id
+				WHERE COALESCE(t.is_transfer, FALSE) = FALSE
+				ORDER BY t.posted DESC`
+			args = []interface{}{}
+		}
+	} else {
+		if startDate != "" && endDate != "" {
+			query = `
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
+				       COALESCE(t.is_transfer, FALSE), t.category_id, c.name as category_name
+				FROM transactions t
+				LEFT JOIN categories c ON t.category_id = c.id
+				WHERE t.posted >= ? AND t.posted <= ?
+				ORDER BY t.posted DESC`
+			args = []interface{}{startDate, endDate}
+		} else {
+			query = `
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
+				       COALESCE(t.is_transfer, FALSE), t.category_id, c.name as category_name
+				FROM transactions t
+				LEFT JOIN categories c ON t.category_id = c.id
+				ORDER BY t.posted DESC`
+			args = []interface{}{}
+		}
+	}
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query transactions by category: %w", err)
+	}
+	defer rows.Close()
+
+	categoryTransactions := make(map[string][]Transaction)
+
+	for rows.Next() {
+		var t Transaction
+		var categoryID sql.NullInt64
+		var categoryName sql.NullString
+
+		err := rows.Scan(
+			&t.ID,
+			&t.AccountID,
+			&t.Posted,
+			&t.Amount,
+			&t.Description,
+			&t.Pending,
+			&t.IsTransfer,
+			&categoryID,
+			&categoryName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+
+		if categoryID.Valid {
+			catID := int(categoryID.Int64)
+			t.CategoryID = &catID
+		}
+
+		// Determine category name
+		var catName string
+		if categoryName.Valid {
+			catName = categoryName.String
+		} else {
+			catName = "Uncategorized"
+		}
+
+		categoryTransactions[catName] = append(categoryTransactions[catName], t)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating transactions: %w", err)
+	}
+
+	return categoryTransactions, nil
+}
+
 // Data types
 type Account struct {
 	ID               string
