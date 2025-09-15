@@ -24,13 +24,23 @@
   - `money accounts nickname set <account-id> <nickname>`: set a custom nickname for an account
   - `money accounts nickname clear <account-id>`: remove custom nickname (revert to original name)
 - `money costs`: shows a breakdown of all costs by category for a given time period (default this month)
+  - `--days|-d <number>`: show costs for the last N days (overrides other date options)
 - `money income`: shows a breakdown of all income by category for a given time period (default this month)
+  - `--days|-d <number>`: show income for the last N days (overrides other date options)
 - `money transactions`: manage and view transactions 
     - `money transactions list [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--account <account-id>] [--category <category-name>]`: list transactions with optional filtering by date range, account, or category
     - `money transactions categorize`: interactively categorize uncategorized transactions via llm.
         - transactions when fetched from simplefin are uncategorized
         - user can run this command to use a llm to categorize them
         - user can review and adjust categories as needed
+        - `money transactions categorize auto [--all]`: automatically categorize transactions using LLM
+        - `money transactions categorize manual`: fast spreadsheet-style TUI for manual transaction categorization
+          - Vim-style keyboard navigation (j/k up/down, h/l left/right, gg/G top/bottom, Ctrl-f/Ctrl-b page up/down)
+          - Quick category selection via numbered shortcuts for common categories
+          - Bulk operations: multi-select transactions (v for visual mode), mark multiple as transfers
+          - Inline category editing with auto-complete from existing categories
+          - Progress tracking and color-coded transactions (expenses/income/transfers)
+          - Vim-like modal interface with normal/insert/visual modes
         - `money transactions categorize modify <transaction-id> <category-name>`: manually set or change the category of a specific transaction
         - `money transactions categorize clear <transaction-id>`: clear the category of a specific transaction (set to uncategorized)
         - `money transactions categorize transfer <transaction-id>`: mark transaction as a transfer (excludes from income/expense calculations)
@@ -50,7 +60,10 @@
    - Use `Z "github.com/rwxrob/bonzai/z"` import alias pattern
 3. storage: SQLite (local file-based database), dir for storage configured via the MONEY_DIR env var, defaults to $HOME/.money
 4. ASCII graphing: github.com/guptarohit/asciigraph for balance trend visualization
-5. LLM integration: For transaction categorization via `money categorize` command
+5. TUI library: github.com/charmbracelet/bubbletea for interactive terminal interfaces
+   - github.com/Evertras/bubble-table for spreadsheet-style transaction categorization
+   - github.com/charmbracelet/lipgloss for styling and layout
+6. LLM integration: For transaction categorization via `money categorize` command
    - API service for LLM calls (OpenAI/Anthropic/local model TBD)
    - Interactive prompting for category review and adjustment
 
