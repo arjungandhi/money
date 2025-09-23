@@ -19,6 +19,7 @@ var Accounts = &Z.Cmd{
 		AccountsList,
 		AccountsType,
 		AccountsNickname,
+		AccountsDelete,
 	},
 }
 
@@ -107,7 +108,7 @@ var AccountsList = &Z.Cmd{
 		}
 
 		fmt.Println()
-		fmt.Println("Available account types: checking, savings, credit, investment, loan, other")
+		fmt.Println("Available account types: checking, savings, credit, investment, loan, property, other")
 		fmt.Println("Use 'money accounts type set <account-id> <type>' to set an account type")
 
 		return nil
@@ -128,7 +129,7 @@ var AccountsTypeSet = &Z.Cmd{
 		accountType := args[1]
 
 		// Validate account type
-		validTypes := []string{"checking", "savings", "credit", "investment", "loan", "other"}
+		validTypes := []string{"checking", "savings", "credit", "investment", "loan", "property", "other"}
 		isValid := false
 		for _, validType := range validTypes {
 			if accountType == validType {
@@ -269,6 +270,71 @@ var AccountsNicknameClear = &Z.Cmd{
 		}
 
 		fmt.Printf("Successfully cleared nickname for account: %s (%s)\n", account.Name, accountID)
+
+		return nil
+	},
+}
+
+var AccountsDelete = &Z.Cmd{
+	Name:     "delete",
+	Aliases:  []string{"del", "rm"},
+	Summary:  "Delete an account and all associated data",
+	Usage:    "<account-id>",
+	Description: `
+Delete an account and all its associated data including:
+- Transaction history
+- Balance history
+- Property details (if property account)
+
+WARNING: This action cannot be undone!
+
+Use 'money accounts list' to see account IDs.
+`,
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) != 1 {
+			return fmt.Errorf("usage: %s <account-id>", cmd.Usage)
+		}
+
+		accountID := args[0]
+
+		db, err := database.New()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		// Check if account exists and get details
+		account, err := db.GetAccountByID(accountID)
+		if err != nil {
+			return err
+		}
+
+		// Confirm deletion
+		fmt.Printf("Are you sure you want to delete account '%s' (%s)?\n", account.DisplayName(), accountID)
+		fmt.Printf("This will permanently delete:\n")
+		fmt.Printf("- All transaction history\n")
+		fmt.Printf("- All balance history\n")
+		if account.AccountType != nil && *account.AccountType == "property" {
+			fmt.Printf("- Property details and valuations\n")
+		}
+		fmt.Printf("\nType 'yes' to confirm: ")
+
+		var confirmation string
+		fmt.Scanln(&confirmation)
+
+		if strings.ToLower(confirmation) != "yes" {
+			fmt.Println("Account deletion cancelled.")
+			return nil
+		}
+
+		// Delete the account
+		err = db.DeleteAccount(accountID)
+		if err != nil {
+			return fmt.Errorf("failed to delete account: %w", err)
+		}
+
+		fmt.Printf("Successfully deleted account '%s' (%s)\n", account.DisplayName(), accountID)
 
 		return nil
 	},

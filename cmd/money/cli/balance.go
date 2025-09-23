@@ -2,18 +2,19 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
-	"os"
 
+	"github.com/guptarohit/asciigraph"
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
-	"github.com/guptarohit/asciigraph"
 
 	"github.com/arjungandhi/money/pkg/database"
+	"github.com/arjungandhi/money/pkg/property"
 )
 
 var Balance = &Z.Cmd{
@@ -70,7 +71,7 @@ var Balance = &Z.Cmd{
 			if account.AccountType != nil {
 				accountType = *account.AccountType
 			}
-			
+
 			if accountsByTypeAndOrg[accountType] == nil {
 				accountsByTypeAndOrg[accountType] = make(map[string][]database.Account)
 			}
@@ -78,9 +79,9 @@ var Balance = &Z.Cmd{
 		}
 
 		// Define account type order (unset at the end)
-		typeOrder := []string{"checking", "savings", "credit", "investment", "loan", "other", "unset"}
+		typeOrder := []string{"checking", "savings", "credit", "investment", "loan", "property", "other", "unset"}
 		var accountTypes []string
-		
+
 		// Add types in preferred order if they exist
 		for _, accountType := range typeOrder {
 			if _, exists := accountsByTypeAndOrg[accountType]; exists {
@@ -95,7 +96,6 @@ var Balance = &Z.Cmd{
 			fmt.Printf("Warning: could not generate balance trend graph: %v\n", err)
 		}
 
-
 		// Show properly aligned current balances table
 		fmt.Println("\nCurrent Account Balances")
 		fmt.Println(strings.Repeat("=", 70))
@@ -104,6 +104,9 @@ var Balance = &Z.Cmd{
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintf(w, "Type\tInstitution\tAccount\tBalance\n")
 		fmt.Fprintf(w, "────\t───────────\t───────\t───────\n")
+
+		// Initialize property service for property account details
+		propertyService := property.NewService(db)
 
 		var totalNetWorth int64
 		for _, account := range accounts {
@@ -121,11 +124,21 @@ var Balance = &Z.Cmd{
 				institutionName = org.Name
 			}
 
+			// For property accounts, show address instead of institution
+			displayName := account.DisplayName()
+			if accountType == "property" {
+				if propertyDetails, err := propertyService.GetPropertyDetails(account.ID); err == nil {
+					institutionName = "Property"
+					displayName = fmt.Sprintf("%s, %s", propertyDetails.Address, propertyDetails.City)
+					displayName = truncateString(displayName, 25)
+				}
+			}
+
 			// Truncate institution name if too long
 			institutionName = truncateString(institutionName, 15)
 
 			fmt.Fprintf(w, "%s %s\t%s\t%s\t%s\n",
-				typeIcon, strings.Title(accountType), institutionName, account.DisplayName(), balanceStr)
+				typeIcon, strings.Title(accountType), institutionName, displayName, balanceStr)
 			totalNetWorth += int64(account.Balance)
 		}
 
@@ -154,23 +167,23 @@ func truncateString(s string, maxLength int) string {
 func formatCurrency(cents int, currency string) string {
 	// Get currency symbol
 	symbol := getCurrencySymbol(currency)
-	
+
 	// Use integer arithmetic to avoid floating point precision issues
 	var wholePart int64
 	var decimalPart int
 	var negative bool
-	
+
 	if cents < 0 {
 		negative = true
 		cents = -cents
 	}
-	
+
 	wholePart = int64(cents / 100)
 	decimalPart = cents % 100
-	
+
 	// Format whole part with commas
 	wholeStr := formatWithCommas(wholePart)
-	
+
 	// Combine parts
 	if negative {
 		return fmt.Sprintf("-%s%s.%02d", symbol, wholeStr, decimalPart)
@@ -233,6 +246,8 @@ func getTypeIcon(accountType string) string {
 		return "📊"
 	case "loan":
 		return "🏠"
+	case "property":
+		return "🏘️"
 	case "other":
 		return "💼"
 	case "unset":
@@ -255,6 +270,8 @@ func getTypeDisplayName(accountType string) string {
 		return "Investment Accounts"
 	case "loan":
 		return "Loan Accounts"
+	case "property":
+		return "Property Accounts"
 	case "other":
 		return "Other Accounts"
 	case "unset":
@@ -293,7 +310,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 
 	// Group history by account type and date - use latest balance per account per day
 	accountDailyBalances := make(map[string]map[string]int64) // [accountID][date] = latestBalance
-	typeHistoryMap := make(map[string]map[string]int64) // [accountType][date] = totalBalance
+	typeHistoryMap := make(map[string]map[string]int64)       // [accountType][date] = totalBalance
 	dateSet := make(map[string]bool)
 
 	// First, get the latest balance per account per day
@@ -348,7 +365,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 	}
 
 	// Create multi-line graph with different series for each account type
-	typeOrder := []string{"checking", "savings", "investment", "credit", "loan", "other", "unset"}
+	typeOrder := []string{"checking", "savings", "investment", "credit", "loan", "property", "other", "unset"}
 	var allSeries [][]float64
 	var seriesLabels []string
 	var seriesColors []asciigraph.AnsiColor
@@ -361,6 +378,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 		"investment": asciigraph.Magenta,
 		"credit":     asciigraph.Red,
 		"loan":       asciigraph.Yellow,
+		"property":   asciigraph.White,
 		"other":      asciigraph.Cyan,
 		"unset":      asciigraph.Default,
 	}
@@ -429,7 +447,6 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 			asciigraph.SeriesLegends(seriesLabels...),
 			asciigraph.Caption(fmt.Sprintf("Balance Trends (Last %d Days)", days)))
 		fmt.Println(graph)
-
 
 		// Show trend summary
 		fmt.Println("\nTrend Summary:")

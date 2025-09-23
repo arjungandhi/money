@@ -17,7 +17,7 @@ var Init = &Z.Cmd{
 	Name:     "init",
 	Summary:  "Initialize SimpleFIN credentials and setup",
 	Commands: []*Z.Cmd{help.Cmd},
-	Usage:   "init [setup-token]",
+	Usage:    "init [setup-token]",
 	Description: `
 Initialize the money CLI by setting up SimpleFIN credentials.
 
@@ -59,7 +59,7 @@ func initCommand(cmd *Z.Cmd, args ...string) error {
 	if hasCredentials {
 		fmt.Println("⚠️  Existing credentials found!")
 		fmt.Println()
-		
+
 		if !confirmOverwrite() {
 			fmt.Println("Setup cancelled.")
 			return nil
@@ -114,9 +114,9 @@ func initCommand(cmd *Z.Cmd, args ...string) error {
 	// Confirm successful setup
 	fmt.Println()
 	fmt.Println("✅ Setup completed successfully!")
-	fmt.Printf("Found %d organizations with %d total accounts\n", 
+	fmt.Printf("Found %d organizations with %d total accounts\n",
 		len(orgMap), len(accounts.Accounts))
-	
+
 	if len(orgMap) > 0 {
 		fmt.Println()
 		fmt.Println("Connected organizations:")
@@ -142,13 +142,13 @@ func initCommand(cmd *Z.Cmd, args ...string) error {
 
 func confirmOverwrite() bool {
 	fmt.Print("Do you want to overwrite the existing setup? (y/N): ")
-	
+
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
 	if err != nil {
 		return false
 	}
-	
+
 	response = strings.TrimSpace(strings.ToLower(response))
 	return response == "y" || response == "yes"
 }
@@ -172,4 +172,3 @@ func promptForSetupToken() (string, error) {
 
 	return token, nil
 }
-

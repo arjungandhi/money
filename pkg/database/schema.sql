@@ -8,6 +8,14 @@ CREATE TABLE credentials (
     last_used DATETIME
 );
 
+-- Store RentCast API credentials
+CREATE TABLE rentcast_credentials (
+    id INTEGER PRIMARY KEY,
+    api_key TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used DATETIME
+);
+
 -- Financial institutions/organizations
 CREATE TABLE organizations (
     id TEXT PRIMARY KEY,  -- SimpleFIN org ID
@@ -26,10 +34,28 @@ CREATE TABLE accounts (
     balance INTEGER NOT NULL,  -- Store as cents to avoid floating point issues
     available_balance INTEGER,
     balance_date DATETIME,
-    account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other', 'unset')) DEFAULT 'unset',
+    account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'property', 'other', 'unset')) DEFAULT 'unset',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (org_id) REFERENCES organizations(id)
+);
+
+-- Property details for property accounts
+CREATE TABLE properties (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL UNIQUE,
+    address TEXT NOT NULL,
+    city TEXT NOT NULL,
+    state TEXT NOT NULL,
+    zip_code TEXT NOT NULL,
+    property_type TEXT CHECK (property_type IN ('Single Family', 'Condo', 'Townhouse', 'Manufactured', 'Multi-Family', 'Apartment', 'Land')),
+    latitude REAL,
+    longitude REAL,
+    last_value_estimate INTEGER,  -- Store as cents
+    last_rent_estimate INTEGER,   -- Store as cents
+    last_updated DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
 -- Categories for transaction classification
@@ -73,3 +99,4 @@ CREATE INDEX idx_transactions_is_transfer ON transactions(is_transfer);
 CREATE INDEX idx_accounts_org_id ON accounts(org_id);
 CREATE INDEX idx_balance_history_account_id ON balance_history(account_id);
 CREATE INDEX idx_balance_history_recorded_at ON balance_history(recorded_at);
+CREATE INDEX idx_properties_account_id ON properties(account_id);

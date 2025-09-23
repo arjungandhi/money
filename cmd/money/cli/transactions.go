@@ -14,7 +14,6 @@ import (
 	"github.com/arjungandhi/money/pkg/llm"
 )
 
-
 var (
 	grayColor  = color.New(color.FgHiBlack)
 	redColor   = color.New(color.FgRed)   // For expenses (negative amounts)
@@ -39,7 +38,7 @@ func colorizeCategory(category string) string {
 func colorizeAmount(amount int, amountStr string, width int) string {
 	coloredStr := amountStr
 	if amount < 0 {
-		coloredStr = redColor.Sprint(amountStr)   // Expenses in red
+		coloredStr = redColor.Sprint(amountStr) // Expenses in red
 	} else if amount > 0 {
 		coloredStr = greenColor.Sprint(amountStr) // Income in green
 	}
@@ -70,10 +69,10 @@ var Transactions = &Z.Cmd{
 }
 
 var TransactionsList = &Z.Cmd{
-	Name:    "list",
-	Aliases: []string{"ls", "l"},
-	Summary: "List transactions with optional filtering",
-	Usage:   "list [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--account <account-id>]",
+	Name:     "list",
+	Aliases:  []string{"ls", "l"},
+	Summary:  "List transactions with optional filtering",
+	Usage:    "list [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--account <account-id>]",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		db, err := database.New()
@@ -192,9 +191,9 @@ var TransactionsList = &Z.Cmd{
 }
 
 var Categorize = &Z.Cmd{
-	Name:     "categorize",
-	Aliases:  []string{"cat", "c"},
-	Summary:  "Manage transaction categorization",
+	Name:    "categorize",
+	Aliases: []string{"cat", "c"},
+	Summary: "Manage transaction categorization",
 	Commands: []*Z.Cmd{
 		help.Cmd,
 		CategorizeModify,
@@ -205,9 +204,9 @@ var Categorize = &Z.Cmd{
 }
 
 var CategorizeModify = &Z.Cmd{
-	Name:    "modify",
-	Summary: "Set or change the category of a specific transaction",
-	Usage:   "modify <transaction-id> <category-name>",
+	Name:     "modify",
+	Summary:  "Set or change the category of a specific transaction",
+	Usage:    "modify <transaction-id> <category-name>",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		if len(args) < 2 {
@@ -259,9 +258,9 @@ var CategorizeModify = &Z.Cmd{
 }
 
 var CategorizeClear = &Z.Cmd{
-	Name:    "clear",
-	Summary: "Clear the category of a specific transaction",
-	Usage:   "clear <transaction-id>",
+	Name:     "clear",
+	Summary:  "Clear the category of a specific transaction",
+	Usage:    "clear <transaction-id>",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		if len(args) != 1 {
@@ -285,7 +284,6 @@ var CategorizeClear = &Z.Cmd{
 		return nil
 	},
 }
-
 
 var CategorizeTransfer = &Z.Cmd{
 	Name:     "transfer",
@@ -337,10 +335,9 @@ var CategorizeAuto = &Z.Cmd{
 	},
 }
 
-
 var Category = &Z.Cmd{
-	Name:     "category",
-	Summary:  "Manage transaction categories",
+	Name:    "category",
+	Summary: "Manage transaction categories",
 	Commands: []*Z.Cmd{
 		help.Cmd,
 		CategoryList,
@@ -567,7 +564,6 @@ func autoCategorizeTransactions() error {
 			continue
 		}
 
-
 		err = db.MarkTransactionAsTransfer(suggestion.TransactionID)
 		if err != nil {
 			return fmt.Errorf("failed to mark transaction as transfer: %w", err)
@@ -625,7 +621,6 @@ func autoCategorizeTransactions() error {
 			continue
 		}
 
-
 		// Get category ID (this will find the existing category since we're using user's categories)
 		categoryID, err := db.SaveCategory(suggestion.Category)
 		if err != nil {
@@ -647,7 +642,6 @@ func autoCategorizeTransactions() error {
 
 	return nil
 }
-
 
 // recategorizeAllTransactions recategorizes ALL transactions using LLM
 func recategorizeAllTransactions() error {
@@ -772,7 +766,6 @@ func recategorizeAllTransactions() error {
 			continue
 		}
 
-
 		err = db.MarkTransactionAsTransfer(suggestion.TransactionID)
 		if err != nil {
 			return fmt.Errorf("failed to mark transaction as transfer: %w", err)
@@ -847,7 +840,6 @@ func recategorizeAllTransactions() error {
 		if transaction == nil {
 			continue
 		}
-
 
 		// Get category ID
 		categoryID, err := db.SaveCategory(suggestion.Category)

@@ -89,7 +89,7 @@ func (db *DB) runIncrementalMigrations() error {
 	if columnExists == 0 {
 		_, err = db.conn.Exec(`
 			ALTER TABLE accounts
-			ADD COLUMN account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other'))
+			ADD COLUMN account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'property', 'other'))
 		`)
 		if err != nil {
 			return fmt.Errorf("failed to add account_type column: %w", err)
@@ -230,6 +230,172 @@ func (db *DB) runIncrementalMigrations() error {
 		}
 	}
 
+	// Check if properties table exists
+	var propertiesTableExists int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM sqlite_master
+		WHERE type='table' AND name='properties'
+	`).Scan(&propertiesTableExists)
+	if err != nil {
+		return fmt.Errorf("failed to check properties table: %w", err)
+	}
+
+	// Create properties table if it doesn't exist
+	if propertiesTableExists == 0 {
+		_, err = db.conn.Exec(`
+			CREATE TABLE properties (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				account_id TEXT NOT NULL UNIQUE,
+				address TEXT NOT NULL,
+				city TEXT NOT NULL,
+				state TEXT NOT NULL,
+				zip_code TEXT NOT NULL,
+				latitude REAL,
+				longitude REAL,
+				last_value_estimate INTEGER,
+				last_rent_estimate INTEGER,
+				last_updated DATETIME,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (account_id) REFERENCES accounts(id)
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create properties table: %w", err)
+		}
+
+		// Create index for properties
+		_, err = db.conn.Exec(`
+			CREATE INDEX idx_properties_account_id ON properties(account_id);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create properties account_id index: %w", err)
+		}
+	}
+
+	// Check if we need to update the account_type constraint to include 'property'
+	// We need to recreate the accounts table with the updated constraint
+	var hasPropertyType int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM sqlite_master
+		WHERE type='table' AND name='accounts' AND sql LIKE '%property%'
+	`).Scan(&hasPropertyType)
+	if err != nil {
+		return fmt.Errorf("failed to check account_type constraint: %w", err)
+	}
+
+	// If the constraint doesn't include 'property', we need to recreate the table
+	if hasPropertyType == 0 {
+		// Start a transaction for this complex migration
+		tx, err := db.conn.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
+		// Create new accounts table with updated constraint
+		_, err = tx.Exec(`
+			CREATE TABLE accounts_new (
+				id TEXT PRIMARY KEY,
+				org_id TEXT NOT NULL,
+				name TEXT NOT NULL,
+				nickname TEXT,
+				currency TEXT NOT NULL DEFAULT 'USD',
+				balance INTEGER NOT NULL,
+				available_balance INTEGER,
+				balance_date DATETIME,
+				account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'property', 'other', 'unset')) DEFAULT 'unset',
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (org_id) REFERENCES organizations(id)
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create new accounts table: %w", err)
+		}
+
+		// Copy data from old table to new
+		_, err = tx.Exec(`
+			INSERT INTO accounts_new (id, org_id, name, nickname, currency, balance, available_balance, balance_date, account_type, created_at, updated_at)
+			SELECT id, org_id, name, nickname, currency, balance, available_balance, balance_date, account_type, created_at, updated_at
+			FROM accounts
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to copy accounts data: %w", err)
+		}
+
+		// Drop old table and rename new one
+		_, err = tx.Exec(`DROP TABLE accounts`)
+		if err != nil {
+			return fmt.Errorf("failed to drop old accounts table: %w", err)
+		}
+
+		_, err = tx.Exec(`ALTER TABLE accounts_new RENAME TO accounts`)
+		if err != nil {
+			return fmt.Errorf("failed to rename new accounts table: %w", err)
+		}
+
+		// Recreate the index
+		_, err = tx.Exec(`CREATE INDEX idx_accounts_org_id ON accounts(org_id)`)
+		if err != nil {
+			return fmt.Errorf("failed to recreate accounts org_id index: %w", err)
+		}
+
+		// Commit the transaction
+		if err = tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit accounts table migration: %w", err)
+		}
+	}
+
+	// Check if rentcast_credentials table exists
+	var rentcastTableExists int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM sqlite_master
+		WHERE type='table' AND name='rentcast_credentials'
+	`).Scan(&rentcastTableExists)
+	if err != nil {
+		return fmt.Errorf("failed to check rentcast_credentials table: %w", err)
+	}
+
+	// Create rentcast_credentials table if it doesn't exist
+	if rentcastTableExists == 0 {
+		_, err = db.conn.Exec(`
+			CREATE TABLE rentcast_credentials (
+				id INTEGER PRIMARY KEY,
+				api_key TEXT NOT NULL,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				last_used DATETIME
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create rentcast_credentials table: %w", err)
+		}
+	}
+
+	// Check if property_type column exists in properties table
+	var propertyTypeColumnExists int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM pragma_table_info('properties')
+		WHERE name = 'property_type'
+	`).Scan(&propertyTypeColumnExists)
+	if err != nil {
+		return fmt.Errorf("failed to check property_type column: %w", err)
+	}
+
+	// Add property_type column if it doesn't exist
+	if propertyTypeColumnExists == 0 {
+		_, err = db.conn.Exec(`
+			ALTER TABLE properties
+			ADD COLUMN property_type TEXT CHECK (property_type IN ('Single Family', 'Condo', 'Townhouse', 'Manufactured', 'Multi-Family', 'Apartment', 'Land'))
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add property_type column: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -282,6 +448,59 @@ func (db *DB) GetCredentials() (accessURL, username, password string, err error)
 	}
 
 	return accessURL, username, password, nil
+}
+
+// RentCast credential methods
+func (db *DB) SaveRentCastAPIKey(apiKey string) error {
+	// Delete any existing API key (only one set allowed)
+	_, err := db.conn.Exec("DELETE FROM rentcast_credentials")
+	if err != nil {
+		return fmt.Errorf("failed to clear existing RentCast API key: %w", err)
+	}
+
+	// Insert new API key
+	_, err = db.conn.Exec(`
+		INSERT INTO rentcast_credentials (api_key, last_used)
+		VALUES (?, CURRENT_TIMESTAMP)`,
+		apiKey)
+	if err != nil {
+		return fmt.Errorf("failed to save RentCast API key: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) GetRentCastAPIKey() (string, error) {
+	var apiKey string
+	err := db.conn.QueryRow(`
+		SELECT api_key
+		FROM rentcast_credentials
+		ORDER BY created_at DESC
+		LIMIT 1`).Scan(&apiKey)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no RentCast API key found - run 'money property config' to set one")
+		}
+		return "", fmt.Errorf("failed to retrieve RentCast API key: %w", err)
+	}
+
+	// Update last_used timestamp
+	_, updateErr := db.conn.Exec("UPDATE rentcast_credentials SET last_used = CURRENT_TIMESTAMP WHERE api_key = ?", apiKey)
+	if updateErr != nil {
+		// Log warning but don't fail the operation
+		fmt.Printf("Warning: failed to update last_used timestamp: %v\n", updateErr)
+	}
+
+	return apiKey, nil
+}
+
+func (db *DB) HasRentCastAPIKey() (bool, error) {
+	var count int
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM rentcast_credentials").Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check RentCast API key: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (db *DB) HasCredentials() (bool, error) {
@@ -350,7 +569,7 @@ func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availab
 	if availableBalance != nil {
 		availableBalanceVal = sql.NullInt64{Int64: int64(*availableBalance), Valid: true}
 	}
-	
+
 	// Use INSERT OR IGNORE first, then UPDATE to preserve account_type
 	_, err := db.conn.Exec(`
 		INSERT OR IGNORE INTO accounts (id, org_id, name, currency, balance, available_balance, balance_date, created_at, updated_at)
@@ -360,7 +579,7 @@ func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availab
 	if err != nil {
 		return fmt.Errorf("failed to insert account: %w", err)
 	}
-	
+
 	// Now update existing records (preserves account_type if already set)
 	_, err = db.conn.Exec(`
 		UPDATE accounts 
@@ -434,10 +653,23 @@ func (db *DB) GetAccounts() ([]Account, error) {
 	return accounts, nil
 }
 
+// UpdateAccountBalance updates only the balance for an existing account
+func (db *DB) UpdateAccountBalance(accountID string, balance int) error {
+	_, err := db.conn.Exec(`
+		UPDATE accounts
+		SET balance = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		balance, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to update account balance: %w", err)
+	}
+	return nil
+}
+
 // Account type methods
 func (db *DB) SetAccountType(accountID, accountType string) error {
 	// Validate account type
-	validTypes := []string{"checking", "savings", "credit", "investment", "loan", "other"}
+	validTypes := []string{"checking", "savings", "credit", "investment", "loan", "property", "other"}
 	isValid := false
 	for _, validType := range validTypes {
 		if accountType == validType {
@@ -543,6 +775,56 @@ func (db *DB) GetAccountByID(accountID string) (*Account, error) {
 	}
 
 	return &account, nil
+}
+
+// DeleteAccount deletes an account and all associated data
+func (db *DB) DeleteAccount(accountID string) error {
+	// Start a transaction to ensure data consistency
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete balance history
+	_, err = tx.Exec("DELETE FROM balance_history WHERE account_id = ?", accountID)
+	if err != nil {
+		return fmt.Errorf("failed to delete balance history: %w", err)
+	}
+
+	// Delete transactions
+	_, err = tx.Exec("DELETE FROM transactions WHERE account_id = ?", accountID)
+	if err != nil {
+		return fmt.Errorf("failed to delete transactions: %w", err)
+	}
+
+	// Delete property details if it's a property account
+	_, err = tx.Exec("DELETE FROM properties WHERE account_id = ?", accountID)
+	if err != nil {
+		return fmt.Errorf("failed to delete property details: %w", err)
+	}
+
+	// Delete the account itself
+	result, err := tx.Exec("DELETE FROM accounts WHERE id = ?", accountID)
+	if err != nil {
+		return fmt.Errorf("failed to delete account: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("account not found: %s", accountID)
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit account deletion: %w", err)
+	}
+
+	return nil
 }
 
 // Transaction methods
@@ -1077,6 +1359,155 @@ func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeTransf
 	return categoryTransactions, nil
 }
 
+// Property methods
+func (db *DB) SaveProperty(accountID, address, city, state, zipCode string, propertyType *string, latitude, longitude *float64) error {
+	var latVal, lonVal sql.NullFloat64
+	var propTypeVal sql.NullString
+	if latitude != nil {
+		latVal = sql.NullFloat64{Float64: *latitude, Valid: true}
+	}
+	if longitude != nil {
+		lonVal = sql.NullFloat64{Float64: *longitude, Valid: true}
+	}
+	if propertyType != nil {
+		propTypeVal = sql.NullString{String: *propertyType, Valid: true}
+	}
+
+	_, err := db.conn.Exec(`
+		INSERT OR REPLACE INTO properties (account_id, address, city, state, zip_code, property_type, latitude, longitude)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		accountID, address, city, state, zipCode, propTypeVal, latVal, lonVal)
+	if err != nil {
+		return fmt.Errorf("failed to save property: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) GetProperty(accountID string) (*Property, error) {
+	var p Property
+	var lat, lon sql.NullFloat64
+	var propertyType sql.NullString
+	var lastValueEstimate, lastRentEstimate sql.NullInt64
+	var lastUpdated sql.NullString
+
+	err := db.conn.QueryRow(`
+		SELECT account_id, address, city, state, zip_code, property_type, latitude, longitude,
+		       last_value_estimate, last_rent_estimate, last_updated
+		FROM properties
+		WHERE account_id = ?`,
+		accountID).Scan(
+		&p.AccountID, &p.Address, &p.City, &p.State, &p.ZipCode, &propertyType,
+		&lat, &lon, &lastValueEstimate, &lastRentEstimate, &lastUpdated)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("property not found for account: %s", accountID)
+		}
+		return nil, fmt.Errorf("failed to get property: %w", err)
+	}
+
+	if propertyType.Valid {
+		p.PropertyType = &propertyType.String
+	}
+	if lat.Valid {
+		p.Latitude = &lat.Float64
+	}
+	if lon.Valid {
+		p.Longitude = &lon.Float64
+	}
+	if lastValueEstimate.Valid {
+		estimate := int(lastValueEstimate.Int64)
+		p.LastValueEstimate = &estimate
+	}
+	if lastRentEstimate.Valid {
+		estimate := int(lastRentEstimate.Int64)
+		p.LastRentEstimate = &estimate
+	}
+	if lastUpdated.Valid {
+		p.LastUpdated = &lastUpdated.String
+	}
+
+	return &p, nil
+}
+
+func (db *DB) UpdatePropertyValuation(accountID string, valueEstimate, rentEstimate *int) error {
+	var valueVal, rentVal sql.NullInt64
+	if valueEstimate != nil {
+		valueVal = sql.NullInt64{Int64: int64(*valueEstimate), Valid: true}
+	}
+	if rentEstimate != nil {
+		rentVal = sql.NullInt64{Int64: int64(*rentEstimate), Valid: true}
+	}
+
+	_, err := db.conn.Exec(`
+		UPDATE properties
+		SET last_value_estimate = ?, last_rent_estimate = ?, last_updated = CURRENT_TIMESTAMP
+		WHERE account_id = ?`,
+		valueVal, rentVal, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to update property valuation: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) GetAllProperties() ([]Property, error) {
+	query := `
+		SELECT account_id, address, city, state, zip_code, property_type, latitude, longitude,
+		       last_value_estimate, last_rent_estimate, last_updated
+		FROM properties
+		ORDER BY address`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query properties: %w", err)
+	}
+	defer rows.Close()
+
+	var properties []Property
+	for rows.Next() {
+		var p Property
+		var lat, lon sql.NullFloat64
+		var propertyType sql.NullString
+		var lastValueEstimate, lastRentEstimate sql.NullInt64
+		var lastUpdated sql.NullString
+
+		err := rows.Scan(
+			&p.AccountID, &p.Address, &p.City, &p.State, &p.ZipCode, &propertyType,
+			&lat, &lon, &lastValueEstimate, &lastRentEstimate, &lastUpdated)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan property: %w", err)
+		}
+
+		if propertyType.Valid {
+			p.PropertyType = &propertyType.String
+		}
+		if lat.Valid {
+			p.Latitude = &lat.Float64
+		}
+		if lon.Valid {
+			p.Longitude = &lon.Float64
+		}
+		if lastValueEstimate.Valid {
+			estimate := int(lastValueEstimate.Int64)
+			p.LastValueEstimate = &estimate
+		}
+		if lastRentEstimate.Valid {
+			estimate := int(lastRentEstimate.Int64)
+			p.LastRentEstimate = &estimate
+		}
+		if lastUpdated.Valid {
+			p.LastUpdated = &lastUpdated.String
+		}
+
+		properties = append(properties, p)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating properties: %w", err)
+	}
+
+	return properties, nil
+}
+
 // Data types
 type Account struct {
 	ID               string
@@ -1126,4 +1557,19 @@ type Organization struct {
 type Category struct {
 	ID   int
 	Name string
+}
+
+type Property struct {
+	ID                int
+	AccountID         string
+	Address           string
+	City              string
+	State             string
+	ZipCode           string
+	PropertyType      *string
+	Latitude          *float64
+	Longitude         *float64
+	LastValueEstimate *int
+	LastRentEstimate  *int
+	LastUpdated       *string
 }

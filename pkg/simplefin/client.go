@@ -241,11 +241,11 @@ type Transaction struct {
 }
 
 type Organization struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Domain   string  `json:"domain,omitempty"`
-	URL      *string `json:"url,omitempty"`
-	SfinURL  *string `json:"sfin-url,omitempty"`
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Domain  string  `json:"domain,omitempty"`
+	URL     *string `json:"url,omitempty"`
+	SfinURL *string `json:"sfin-url,omitempty"`
 }
 
 type Holding struct {
@@ -264,12 +264,12 @@ func ParseAmountToCents(amountStr string) (int, error) {
 	if amountStr == "" {
 		return 0, nil
 	}
-	
+
 	amount, err := strconv.ParseFloat(amountStr, 64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse amount '%s': %w", amountStr, err)
 	}
-	
+
 	cents := amount * 100
 	if cents >= 0 {
 		cents += 0.5

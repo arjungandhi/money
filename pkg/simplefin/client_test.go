@@ -235,7 +235,7 @@ func TestParseAmountToCents(t *testing.T) {
 
 	for _, tc := range testCases {
 		result, err := ParseAmountToCents(tc.input)
-		
+
 		if tc.hasError {
 			if err == nil {
 				t.Errorf("Expected error for input '%s', but got none", tc.input)

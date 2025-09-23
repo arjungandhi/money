@@ -9,14 +9,15 @@ import (
 	"github.com/rwxrob/help"
 
 	"github.com/arjungandhi/money/pkg/database"
+	"github.com/arjungandhi/money/pkg/property"
 	"github.com/arjungandhi/money/pkg/simplefin"
 )
 
 var Fetch = &Z.Cmd{
-	Name:     "fetch",
-	Aliases:  []string{"f", "sync"},
-	Summary:  "Sync latest data from SimpleFIN",
-	Usage:    "[--days|-d <number>] [--all|-a]",
+	Name:    "fetch",
+	Aliases: []string{"f", "sync"},
+	Summary: "Sync latest data from SimpleFIN",
+	Usage:   "[--days|-d <number>] [--all|-a]",
 	Description: `
 Sync account and transaction data from SimpleFIN.
 
@@ -93,7 +94,7 @@ Examples:
 			if org.URL != nil {
 				url = *org.URL
 			}
-			
+
 			if err := db.SaveOrganization(org.ID, org.Name, url); err != nil {
 				return fmt.Errorf("failed to save organization %s: %w", org.Name, err)
 			}
@@ -184,6 +185,25 @@ Examples:
 		}
 
 		stats.duration = time.Since(stats.startTime)
+
+		// Update property valuations if API key is configured
+		propertyService := property.NewService(db)
+		if hasAPIKey, err := db.HasRentCastAPIKey(); err == nil && hasAPIKey {
+			fmt.Printf("\nUpdating property valuations...\n")
+			if err := propertyService.UpdateAllPropertyValuations(); err != nil {
+				fmt.Printf("Warning: Failed to update property valuations: %v\n", err)
+				fmt.Printf("You can manually update them later with 'money property update-all'\n")
+			} else {
+				fmt.Printf("Property valuations updated successfully.\n")
+			}
+		} else {
+			// Check if there are any properties
+			if properties, err := propertyService.ListAllProperties(); err == nil && len(properties) > 0 {
+				fmt.Printf("\nNote: You have %d property account(s) but no RentCast API key configured.\n", len(properties))
+				fmt.Printf("Run 'money property config <api-key>' to enable automatic property valuation updates.\n")
+			}
+		}
+
 		printSyncSummary(stats)
 
 		return nil
@@ -205,7 +225,7 @@ func printSyncSummary(stats syncStats) {
 	fmt.Printf("  Organizations: %d processed\n", stats.orgsProcessed)
 	fmt.Printf("  Accounts: %d processed\n", stats.accountsProcessed)
 	fmt.Printf("  Transactions: %d processed (%d new)\n", stats.transactionsProcessed, stats.newTransactions)
-	
+
 	if stats.newTransactions > 0 {
 		fmt.Printf("\nFetch completed successfully! %d new transactions were added.\n", stats.newTransactions)
 	} else {

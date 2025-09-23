@@ -36,10 +36,10 @@ type TransferSuggestion struct {
 
 // CategorySuggestion represents a suggested category for a transaction
 type CategorySuggestion struct {
-	TransactionID string `json:"transaction_id"`
-	Category      string `json:"category"`
+	TransactionID string  `json:"transaction_id"`
+	Category      string  `json:"category"`
 	Confidence    float64 `json:"confidence"`
-	Reasoning     string `json:"reasoning"`
+	Reasoning     string  `json:"reasoning"`
 }
 
 // TransferAnalysisResult contains the results of transfer identification
@@ -69,7 +69,6 @@ func (c *Client) IdentifyTransfers(ctx context.Context, transactions []Transacti
 	return &result, nil
 }
 
-
 func (c *Client) CategorizeTransactions(ctx context.Context, transactions []TransactionData, categories []string) (*CategoryAnalysisResult, error) {
 	prompt := buildCategorizationPrompt(transactions, categories)
 
@@ -86,7 +85,6 @@ func (c *Client) CategorizeTransactions(ctx context.Context, transactions []Tran
 
 	return &result, nil
 }
-
 
 // runLLMCommand executes the configured LLM command with the given prompt
 func (c *Client) runLLMCommand(ctx context.Context, prompt string) (string, error) {
@@ -123,20 +121,20 @@ func (c *Client) runLLMCommand(ctx context.Context, prompt string) (string, erro
 
 // TransactionData represents transaction data for LLM processing
 type TransactionData struct {
-	ID          string  `json:"id"`
-	AccountID   string  `json:"account_id"`
-	Posted      string  `json:"posted"`
-	Amount      int     `json:"amount"`
-	Description string  `json:"description"`
-	Pending     bool    `json:"pending"`
+	ID          string `json:"id"`
+	AccountID   string `json:"account_id"`
+	Posted      string `json:"posted"`
+	Amount      int    `json:"amount"`
+	Description string `json:"description"`
+	Pending     bool   `json:"pending"`
 }
 
 // AccountData represents account data for LLM processing
 type AccountData struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Nickname     string `json:"nickname,omitempty"`
-	AccountType  string `json:"account_type,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Nickname    string `json:"nickname,omitempty"`
+	AccountType string `json:"account_type,omitempty"`
 }
 
 // buildTransferIdentificationPrompt creates a prompt for identifying inter-account transfers
@@ -292,4 +290,3 @@ func PromptForApproval(message string) (bool, error) {
 	}
 	return false, scanner.Err()
 }
-

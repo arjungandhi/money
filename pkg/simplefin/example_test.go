@@ -46,7 +46,7 @@ func ExampleClient_GetAccounts() {
 	// Process accounts
 	for _, account := range response.Accounts {
 		fmt.Printf("Account: %s (%s)\n", account.Name, account.Currency)
-		
+
 		// Parse balance from string
 		balanceCents, err := simplefin.ParseAmountToCents(account.Balance)
 		if err != nil {
@@ -62,18 +62,18 @@ func ExampleClient_GetAccounts() {
 			if i >= 3 { // Show only first 3 transactions
 				break
 			}
-			
+
 			// Parse amount from string
 			amountCents, err := simplefin.ParseAmountToCents(txn.Amount)
 			if err != nil {
 				log.Printf("Failed to parse transaction amount: %v", err)
 				continue
 			}
-			
+
 			// Convert unix timestamp to readable format
 			postedDate := simplefin.UnixTimestampToISO(txn.Posted)
-			
-			fmt.Printf("  %s: $%.2f - %s\n", 
+
+			fmt.Printf("  %s: $%.2f - %s\n",
 				postedDate, float64(amountCents)/100, txn.Description)
 		}
 	}

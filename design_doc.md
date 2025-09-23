@@ -9,6 +9,7 @@
    - Uses stored Access URL from `money init` to fetch account data via GET /accounts endpoint
    - Data synced includes accounts and transactions with full history
    - Records balance snapshots for historical trending in balance command
+   - Automatically updates property valuations if RentCast API key is configured
    - Available Data Types:
      - Accounts: ID, name, currency, balance, available balance, balance date
      - Transactions: ID, posted timestamp, amount, description, pending status
@@ -19,7 +20,7 @@
 - `money accounts`: manage user accounts and account types
   - `money accounts list`: show all accounts with their current types and organizations
   - `money accounts type set <account-id> <type>`: set account type for better balance organization
-    - Valid types: checking, savings, credit, investment, loan, other
+    - Valid types: checking, savings, credit, investment, loan, property, other
   - `money accounts type clear <account-id>`: clear account type (set to unset)
   - `money accounts nickname set <account-id> <nickname>`: set a custom nickname for an account
   - `money accounts nickname clear <account-id>`: remove custom nickname (revert to original name)
@@ -49,6 +50,13 @@
   - `money transactions category add <name>`: add a new category
   - `money transactions category remove <name>`: remove a category (only if not used by any transactions)
   - `money transactions category seed`: populate database with common default categories
+- `money property`: manage property accounts and valuations using RentCast API
+  - `money property config <api-key>`: configure RentCast API key for property valuations
+  - `money property add <name> <address> <city> <state> <zipcode> [latitude] [longitude]`: add a new property account
+  - `money property list`: list all property accounts with their details and current values
+  - `money property update <account-id>`: update valuation for a specific property using RentCast API
+  - `money property update-all`: update valuations for all property accounts using RentCast API
+  - `money property details <account-id>`: show detailed information for a specific property
 
 # Tech Stack
 1. language: Go
@@ -80,6 +88,14 @@ CREATE TABLE credentials (
     last_used DATETIME
 );
 
+-- Store RentCast API credentials
+CREATE TABLE rentcast_credentials (
+    id INTEGER PRIMARY KEY,
+    api_key TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used DATETIME
+);
+
 -- Financial institutions/organizations
 CREATE TABLE organizations (
     id TEXT PRIMARY KEY,  -- SimpleFIN org ID
@@ -98,10 +114,27 @@ CREATE TABLE accounts (
     balance INTEGER NOT NULL,  -- Store as cents to avoid floating point issues
     available_balance INTEGER,
     balance_date DATETIME,
-    account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'other', 'unset')) DEFAULT 'unset',
+    account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit', 'investment', 'loan', 'property', 'other', 'unset')) DEFAULT 'unset',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (org_id) REFERENCES organizations(id)
+);
+
+-- Property details for property accounts
+CREATE TABLE properties (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL UNIQUE,
+    address TEXT NOT NULL,
+    city TEXT NOT NULL,
+    state TEXT NOT NULL,
+    zip_code TEXT NOT NULL,
+    latitude REAL,
+    longitude REAL,
+    last_value_estimate INTEGER,  -- Store as cents
+    last_rent_estimate INTEGER,   -- Store as cents
+    last_updated DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
 -- Categories for transaction classification
@@ -145,4 +178,5 @@ CREATE INDEX idx_transactions_is_transfer ON transactions(is_transfer);
 CREATE INDEX idx_accounts_org_id ON accounts(org_id);
 CREATE INDEX idx_balance_history_account_id ON balance_history(account_id);
 CREATE INDEX idx_balance_history_recorded_at ON balance_history(recorded_at);
+CREATE INDEX idx_properties_account_id ON properties(account_id);
 ```
