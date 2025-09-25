@@ -179,13 +179,7 @@ var Balance = &Z.Cmd{
 
 				// Use consistent formatting for account type names
 				accountTypeName := strings.Title(accountType)
-				var displayName string
-				// Add extra space for property emoji which renders wider
-				if accountType == "property" {
-					displayName = fmt.Sprintf("%s  %s", typeIcon, accountTypeName)
-				} else {
-					displayName = fmt.Sprintf("%s %s", typeIcon, accountTypeName)
-				}
+				displayName := fmt.Sprintf("%s %s", typeIcon, accountTypeName)
 
 				fmt.Fprintf(wTotals, "%s\t%s\t%d\n",
 					displayName, totalStr, count)
@@ -297,9 +291,9 @@ func getTypeIcon(accountType string) string {
 	case "investment":
 		return "📊"
 	case "loan":
-		return "🏠"
+		return "💸"
 	case "property":
-		return "🏘️"
+		return "🏠"
 	case "other":
 		return "💼"
 	case "unset":
