@@ -180,8 +180,6 @@ var Balance = &Z.Cmd{
 
 		wTotals.Flush()
 
-		fmt.Printf("\n🏆 Net Worth: %s\n", format.Currency(int(totalNetWorth), "USD"))
-
 		return nil
 		})
 	},
@@ -461,21 +459,6 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 
 		variation := maxNetWorth - minNetWorth
 		if variation > 10.0 {
-			fmt.Printf("\n🏆 Net Worth:\n")
-
-			// Use tight bounds for net worth graph that don't start from 0
-			padding := variation * 0.05 // 5% padding on each side
-			lowerBound := minNetWorth - padding
-			upperBound := maxNetWorth + padding
-
-			netWorthGraph := asciigraph.Plot(netWorthSeries,
-				asciigraph.Height(8),
-				asciigraph.Width(70),
-				asciigraph.LowerBound(lowerBound),
-				asciigraph.UpperBound(upperBound),
-				asciigraph.SeriesColors(asciigraph.Green))
-			fmt.Println(netWorthGraph)
-
 			// Show net worth trend summary
 			netWorthChange := netWorthSeries[len(netWorthSeries)-1] - netWorthSeries[0]
 			netWorthChangePercent := 0.0
@@ -492,8 +475,21 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 				trend = " (→ No change)"
 			}
 
-			fmt.Printf("Current Net Worth: %s%s\n",
-				format.Currency(int(netWorthSeries[len(netWorthSeries)-1]*100), "USD"), trend)
+			currentNetWorth := format.Currency(int(netWorthSeries[len(netWorthSeries)-1]*100), "USD")
+			fmt.Printf("\n🏆 Net Worth: %s%s\n", currentNetWorth, trend)
+
+			// Use tight bounds for net worth graph that don't start from 0
+			padding := variation * 0.05 // 5% padding on each side
+			lowerBound := minNetWorth - padding
+			upperBound := maxNetWorth + padding
+
+			netWorthGraph := asciigraph.Plot(netWorthSeries,
+				asciigraph.Height(8),
+				asciigraph.Width(70),
+				asciigraph.LowerBound(lowerBound),
+				asciigraph.UpperBound(upperBound),
+				asciigraph.SeriesColors(asciigraph.Green))
+			fmt.Println(netWorthGraph)
 		}
 	}
 
@@ -626,21 +622,6 @@ func displaySingleChart(title string, series []float64, color asciigraph.AnsiCol
 		return
 	}
 
-	fmt.Printf("\n%s:\n", title)
-
-	// Use tight bounds that don't start from 0
-	padding := variation * 0.05 // 5% padding on each side
-	lowerBound := minVal - padding
-	upperBound := maxVal + padding
-
-	graph := asciigraph.Plot(series,
-		asciigraph.Height(8),
-		asciigraph.Width(70),
-		asciigraph.LowerBound(lowerBound),
-		asciigraph.UpperBound(upperBound),
-		asciigraph.SeriesColors(color))
-	fmt.Println(graph)
-
 	// Show trend summary
 	change := series[len(series)-1] - series[0]
 	changePercent := 0.0
@@ -657,5 +638,20 @@ func displaySingleChart(title string, series []float64, color asciigraph.AnsiCol
 		trend = " (→ No change)"
 	}
 
-	fmt.Printf("Current Total: %s%s\n", format.Currency(int(series[len(series)-1]*100), "USD"), trend)
+	// Include current total in title
+	currentTotal := format.Currency(int(series[len(series)-1]*100), "USD")
+	fmt.Printf("\n%s: %s%s\n", title, currentTotal, trend)
+
+	// Use tight bounds that don't start from 0
+	padding := variation * 0.05 // 5% padding on each side
+	lowerBound := minVal - padding
+	upperBound := maxVal + padding
+
+	graph := asciigraph.Plot(series,
+		asciigraph.Height(8),
+		asciigraph.Width(70),
+		asciigraph.LowerBound(lowerBound),
+		asciigraph.UpperBound(upperBound),
+		asciigraph.SeriesColors(color))
+	fmt.Println(graph)
 }
