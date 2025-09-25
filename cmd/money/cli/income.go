@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
 
 	"github.com/arjungandhi/money/pkg/database"
+	"github.com/arjungandhi/money/pkg/format"
 )
 
 var Income = &Z.Cmd{
@@ -27,7 +27,7 @@ var Income = &Z.Cmd{
 		defer db.Close()
 
 		// Parse date arguments (reuse same function from costs)
-		startDate, endDate := parseIncomeDateRange(args)
+		startDate, endDate := format.DateRange(args)
 
 		// Get categorized transactions (exclude transfers)
 		categoryTransactions, err := db.GetTransactionsByCategory(startDate, endDate, true)
@@ -59,7 +59,7 @@ var Income = &Z.Cmd{
 			return nil
 		}
 
-		fmt.Printf("\n💰 Income Breakdown (%s to %s)\n", formatIncomeeDateForDisplay(startDate), formatIncomeeDateForDisplay(endDate))
+		fmt.Printf("\n💰 Income Breakdown (%s to %s)\n", format.DateForDisplay(startDate), format.DateForDisplay(endDate))
 		fmt.Println(strings.Repeat("=", 60))
 
 		// Sort categories by income amount (descending)
@@ -86,65 +86,17 @@ var Income = &Z.Cmd{
 			percentage := float64(cat.income) / float64(totalIncome) * 100
 			fmt.Fprintf(w, "%s\t%s\t%.1f%%\n",
 				cat.name,
-				formatCurrency(int(cat.income), "USD"),
+				format.Currency(int(cat.income), "USD"),
 				percentage)
 		}
 
 		w.Flush()
 
 		fmt.Println(strings.Repeat("=", 60))
-		fmt.Printf("💵 Total Income: %s\n", formatCurrency(int(totalIncome), "USD"))
+		fmt.Printf("💵 Total Income: %s\n", format.Currency(int(totalIncome), "USD"))
 		fmt.Println(strings.Repeat("=", 60))
 
 		return nil
 	},
 }
 
-// parseIncomeDateRange parses command line arguments for date range (same as costs)
-func parseIncomeDateRange(args []string) (startDate, endDate string) {
-	// Default to current month
-	now := time.Now()
-
-	// Check for explicit start/end dates
-	for i, arg := range args {
-		if (arg == "--start" || arg == "-s") && i+1 < len(args) {
-			startDate = args[i+1]
-		} else if (arg == "--end" || arg == "-e") && i+1 < len(args) {
-			endDate = args[i+1]
-		} else if (arg == "--month" || arg == "-m") && i+1 < len(args) {
-			// Parse month in YYYY-MM format
-			monthStr := args[i+1]
-			if monthTime, err := time.Parse("2006-01", monthStr); err == nil {
-				startDate = monthTime.Format("2006-01-02")
-				endDate = monthTime.AddDate(0, 1, -1).Format("2006-01-02") // Last day of month
-			}
-		}
-	}
-
-	// If no dates specified, use current month
-	if startDate == "" && endDate == "" {
-		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
-		endDate = time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, now.Location()).Format("2006-01-02")
-	} else if startDate != "" && endDate == "" {
-		// If only start date provided, use rest of current month
-		endDate = now.Format("2006-01-02")
-	} else if startDate == "" && endDate != "" {
-		// If only end date provided, use beginning of month
-		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
-	}
-
-	return startDate, endDate
-}
-
-// formatIncomeeDateForDisplay formats a date string for user-friendly display
-func formatIncomeeDateForDisplay(dateStr string) string {
-	if dateStr == "" {
-		return "unknown"
-	}
-
-	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
-		return t.Format("Jan 2, 2006")
-	}
-
-	return dateStr
-}

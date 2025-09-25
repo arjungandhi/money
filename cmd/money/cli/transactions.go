@@ -10,6 +10,7 @@ import (
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
 
+	"github.com/arjungandhi/money/internal/convert"
 	"github.com/arjungandhi/money/pkg/database"
 	"github.com/arjungandhi/money/pkg/llm"
 )
@@ -507,35 +508,8 @@ func autoCategorizeTransactions() error {
 	ctx := context.Background()
 
 	// Convert database types to LLM types
-	llmTransactions := make([]llm.TransactionData, len(transactions))
-	for i, tx := range transactions {
-		llmTransactions[i] = llm.TransactionData{
-			ID:          tx.ID,
-			AccountID:   tx.AccountID,
-			Posted:      tx.Posted,
-			Amount:      tx.Amount,
-			Description: tx.Description,
-			Pending:     tx.Pending,
-		}
-	}
-
-	llmAccounts := make([]llm.AccountData, len(accounts))
-	for i, acc := range accounts {
-		nickname := ""
-		if acc.Nickname != nil {
-			nickname = *acc.Nickname
-		}
-		accountType := ""
-		if acc.AccountType != nil {
-			accountType = *acc.AccountType
-		}
-		llmAccounts[i] = llm.AccountData{
-			ID:          acc.ID,
-			Name:        acc.Name,
-			Nickname:    nickname,
-			AccountType: accountType,
-		}
-	}
+	llmTransactions := convert.ToLLMTransactionData(transactions)
+	llmAccounts := convert.ToLLMAccountData(accounts)
 
 	// Step 1: Identify inter-account transfers
 	fmt.Println("🔄 Step 1: Identifying inter-account transfers...")
@@ -581,17 +555,7 @@ func autoCategorizeTransactions() error {
 	}
 
 	// Update LLM transactions list for categorization step
-	llmTransactions = make([]llm.TransactionData, len(transactions))
-	for i, tx := range transactions {
-		llmTransactions[i] = llm.TransactionData{
-			ID:          tx.ID,
-			AccountID:   tx.AccountID,
-			Posted:      tx.Posted,
-			Amount:      tx.Amount,
-			Description: tx.Description,
-			Pending:     tx.Pending,
-		}
-	}
+	llmTransactions = convert.ToLLMTransactionData(transactions)
 
 	if len(llmTransactions) == 0 {
 		fmt.Println("All transactions have been processed!")
@@ -697,35 +661,8 @@ func recategorizeAllTransactions() error {
 	ctx := context.Background()
 
 	// Convert database types to LLM types
-	llmTransactions := make([]llm.TransactionData, len(transactions))
-	for i, tx := range transactions {
-		llmTransactions[i] = llm.TransactionData{
-			ID:          tx.ID,
-			AccountID:   tx.AccountID,
-			Posted:      tx.Posted,
-			Amount:      tx.Amount,
-			Description: tx.Description,
-			Pending:     tx.Pending,
-		}
-	}
-
-	llmAccounts := make([]llm.AccountData, len(accounts))
-	for i, acc := range accounts {
-		nickname := ""
-		if acc.Nickname != nil {
-			nickname = *acc.Nickname
-		}
-		accountType := ""
-		if acc.AccountType != nil {
-			accountType = *acc.AccountType
-		}
-		llmAccounts[i] = llm.AccountData{
-			ID:          acc.ID,
-			Name:        acc.Name,
-			Nickname:    nickname,
-			AccountType: accountType,
-		}
-	}
+	llmTransactions := convert.ToLLMTransactionData(transactions)
+	llmAccounts := convert.ToLLMAccountData(accounts)
 
 	// Step 1: Re-identify inter-account transfers (clear existing transfer flags first)
 	fmt.Println("🔄 Step 1: Re-identifying inter-account transfers...")
@@ -807,17 +744,7 @@ func recategorizeAllTransactions() error {
 	}
 
 	// Convert to LLM format for categorization
-	llmTransactions = make([]llm.TransactionData, len(nonTransferTransactions))
-	for i, tx := range nonTransferTransactions {
-		llmTransactions[i] = llm.TransactionData{
-			ID:          tx.ID,
-			AccountID:   tx.AccountID,
-			Posted:      tx.Posted,
-			Amount:      tx.Amount,
-			Description: tx.Description,
-			Pending:     tx.Pending,
-		}
-	}
+	llmTransactions = convert.ToLLMTransactionData(nonTransferTransactions)
 
 	fmt.Printf("Categorizing %d non-transfer transactions...\n", len(llmTransactions))
 	categoryResult, err := llmClient.CategorizeTransactions(ctx, llmTransactions, categoryNames)

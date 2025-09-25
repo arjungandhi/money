@@ -13,7 +13,9 @@ import (
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
 
+	"github.com/arjungandhi/money/internal/dbutil"
 	"github.com/arjungandhi/money/pkg/database"
+	"github.com/arjungandhi/money/pkg/format"
 	"github.com/arjungandhi/money/pkg/property"
 )
 
@@ -35,11 +37,7 @@ var Balance = &Z.Cmd{
 			}
 		}
 
-		db, err := database.New()
-		if err != nil {
-			return err
-		}
-		defer db.Close()
+		return dbutil.WithDatabase(func(db *database.DB) error {
 
 		// Get all accounts
 		accounts, err := db.GetAccounts()
@@ -118,7 +116,7 @@ var Balance = &Z.Cmd{
 			}
 
 			typeIcon := getTypeIcon(accountType)
-			balanceStr := formatCurrency(account.Balance, account.Currency)
+			balanceStr := format.Currency(account.Balance, account.Currency)
 
 			// Get institution name
 			institutionName := account.OrgID // fallback to ID
@@ -175,7 +173,7 @@ var Balance = &Z.Cmd{
 			if total, exists := accountTypeTotals[accountType]; exists {
 				typeIcon := getTypeIcon(accountType)
 				count := accountTypeCounts[accountType]
-				totalStr := formatCurrency(int(total), "USD")
+				totalStr := format.Currency(int(total), "USD")
 
 				// Use consistent formatting for account type names
 				accountTypeName := strings.Title(accountType)
@@ -190,11 +188,12 @@ var Balance = &Z.Cmd{
 
 		fmt.Println(strings.Repeat("=", 70))
 		fmt.Println()
-		fmt.Printf("💰 Net Worth: %s\n", formatCurrency(int(totalNetWorth), "USD"))
+		fmt.Printf("💰 Net Worth: %s\n", format.Currency(int(totalNetWorth), "USD"))
 		fmt.Println()
 		fmt.Println(strings.Repeat("=", 70))
 
 		return nil
+		})
 	},
 }
 
@@ -209,75 +208,6 @@ func truncateString(s string, maxLength int) string {
 	return s[:maxLength-3] + "..."
 }
 
-// formatCurrency converts cents to dollars and formats with currency symbol and thousands separators
-func formatCurrency(cents int, currency string) string {
-	// Get currency symbol
-	symbol := getCurrencySymbol(currency)
-
-	// Use integer arithmetic to avoid floating point precision issues
-	var wholePart int64
-	var decimalPart int
-	var negative bool
-
-	if cents < 0 {
-		negative = true
-		cents = -cents
-	}
-
-	wholePart = int64(cents / 100)
-	decimalPart = cents % 100
-
-	// Format whole part with commas
-	wholeStr := formatWithCommas(wholePart)
-
-	// Combine parts
-	if negative {
-		return fmt.Sprintf("-%s%s.%02d", symbol, wholeStr, decimalPart)
-	} else {
-		return fmt.Sprintf("%s%s.%02d", symbol, wholeStr, decimalPart)
-	}
-}
-
-// formatWithCommas adds thousands separators to a number
-func formatWithCommas(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-
-	str := fmt.Sprintf("%d", n)
-
-	// Work backwards in groups of 3
-	var parts []string
-	for i := len(str); i > 0; i -= 3 {
-		start := i - 3
-		if start < 0 {
-			start = 0
-		}
-		parts = append([]string{str[start:i]}, parts...)
-	}
-
-	return strings.Join(parts, ",")
-}
-
-// getCurrencySymbol returns the appropriate symbol for the currency
-func getCurrencySymbol(currency string) string {
-	switch strings.ToUpper(currency) {
-	case "USD":
-		return "$"
-	case "EUR":
-		return "€"
-	case "GBP":
-		return "£"
-	case "JPY":
-		return "¥"
-	case "CAD":
-		return "C$"
-	case "AUD":
-		return "A$"
-	default:
-		return currency + " "
-	}
-}
 
 // getTypeIcon returns the appropriate emoji for the account type
 func getTypeIcon(accountType string) string {
@@ -565,15 +495,15 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 
 			var trend string
 			if netWorthChange > 0 {
-				trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", formatWithCommas(int64(netWorthChange)), netWorthChangePercent)
+				trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", format.WithCommas(int64(netWorthChange)), netWorthChangePercent)
 			} else if netWorthChange < 0 {
-				trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", formatWithCommas(int64(-netWorthChange)), netWorthChangePercent)
+				trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", format.WithCommas(int64(-netWorthChange)), netWorthChangePercent)
 			} else {
 				trend = " (→ No change)"
 			}
 
 			fmt.Printf("Current Net Worth: %s%s\n",
-				formatCurrency(int(netWorthSeries[len(netWorthSeries)-1]*100), "USD"), trend)
+				format.Currency(int(netWorthSeries[len(netWorthSeries)-1]*100), "USD"), trend)
 		}
 	}
 
@@ -664,14 +594,14 @@ func displayChart(title string, series [][]float64, labels []string, colors []as
 
 			var trend string
 			if change > 0 {
-				trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", formatWithCommas(int64(change)), changePercent)
+				trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", format.WithCommas(int64(change)), changePercent)
 			} else if change < 0 {
-				trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", formatWithCommas(int64(-change)), changePercent)
+				trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", format.WithCommas(int64(-change)), changePercent)
 			} else {
 				trend = " (→ No change)"
 			}
 
-			fmt.Printf("    Current: %s%s\n", formatCurrency(int(s[len(s)-1]*100), "USD"), trend)
+			fmt.Printf("    Current: %s%s\n", format.Currency(int(s[len(s)-1]*100), "USD"), trend)
 		}
 	}
 }
@@ -730,12 +660,12 @@ func displaySingleChart(title string, series []float64, color asciigraph.AnsiCol
 
 	var trend string
 	if change > 0 {
-		trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", formatWithCommas(int64(change)), changePercent)
+		trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", format.WithCommas(int64(change)), changePercent)
 	} else if change < 0 {
-		trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", formatWithCommas(int64(-change)), changePercent)
+		trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", format.WithCommas(int64(-change)), changePercent)
 	} else {
 		trend = " (→ No change)"
 	}
 
-	fmt.Printf("Current Total: %s%s\n", formatCurrency(int(series[len(series)-1]*100), "USD"), trend)
+	fmt.Printf("Current Total: %s%s\n", format.Currency(int(series[len(series)-1]*100), "USD"), trend)
 }

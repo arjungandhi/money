@@ -7,6 +7,7 @@ import (
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
 
+	"github.com/arjungandhi/money/internal/dbutil"
 	"github.com/arjungandhi/money/pkg/database"
 )
 
@@ -49,16 +50,11 @@ var AccountsList = &Z.Cmd{
 	Summary:  "Show all accounts with their current types",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
-		db, err := database.New()
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		accounts, err := db.GetAccounts()
-		if err != nil {
-			return fmt.Errorf("failed to get accounts: %w", err)
-		}
+		return dbutil.WithDatabase(func(db *database.DB) error {
+			accounts, err := db.GetAccounts()
+			if err != nil {
+				return fmt.Errorf("failed to get accounts: %w", err)
+			}
 
 		if len(accounts) == 0 {
 			fmt.Println("No accounts found. Run 'money fetch' to sync your financial data.")
@@ -112,6 +108,7 @@ var AccountsList = &Z.Cmd{
 		fmt.Println("Use 'money accounts type set <account-id> <type>' to set an account type")
 
 		return nil
+		})
 	},
 }
 

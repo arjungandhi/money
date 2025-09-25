@@ -9,6 +9,7 @@ import (
 	"github.com/rwxrob/help"
 
 	"github.com/arjungandhi/money/pkg/database"
+	"github.com/arjungandhi/money/pkg/format"
 	"github.com/arjungandhi/money/pkg/property"
 )
 
@@ -211,7 +212,7 @@ var PropertyList = &Z.Cmd{
 
 			valueStr := "N/A"
 			if account.Balance > 0 {
-				valueStr = formatCurrency(account.Balance, "USD")
+				valueStr = format.Currency(account.Balance, "USD")
 			}
 
 			lastUpdated := "Never"
@@ -274,10 +275,10 @@ var PropertyUpdate = &Z.Cmd{
 
 		fmt.Printf("Successfully updated property valuation:\n")
 		fmt.Printf("  Address: %s, %s, %s %s\n", propertyDetails.Address, propertyDetails.City, propertyDetails.State, propertyDetails.ZipCode)
-		fmt.Printf("  Current Value: %s\n", formatCurrency(account.Balance, "USD"))
+		fmt.Printf("  Current Value: %s\n", format.Currency(account.Balance, "USD"))
 
 		if propertyDetails.LastRentEstimate != nil {
-			fmt.Printf("  Estimated Rent: %s/month\n", formatCurrency(*propertyDetails.LastRentEstimate, "USD"))
+			fmt.Printf("  Estimated Rent: %s/month\n", format.Currency(*propertyDetails.LastRentEstimate, "USD"))
 		}
 
 		return nil
@@ -356,7 +357,7 @@ var PropertySetValue = &Z.Cmd{
 			return fmt.Errorf("failed to set property value: %w", err)
 		}
 
-		fmt.Printf("Successfully set property value to %s for account: %s\n", formatCurrency(valueInCents, "USD"), accountID)
+		fmt.Printf("Successfully set property value to %s for account: %s\n", format.Currency(valueInCents, "USD"), accountID)
 
 		return nil
 	},
@@ -411,14 +412,14 @@ var PropertyDetails = &Z.Cmd{
 			fmt.Printf("Location: %.6f, %.6f\n", *propertyDetails.Latitude, *propertyDetails.Longitude)
 		}
 
-		fmt.Printf("Current Value: %s\n", formatCurrency(account.Balance, "USD"))
+		fmt.Printf("Current Value: %s\n", format.Currency(account.Balance, "USD"))
 
 		if propertyDetails.LastValueEstimate != nil {
-			fmt.Printf("Last Value Estimate: %s\n", formatCurrency(*propertyDetails.LastValueEstimate, "USD"))
+			fmt.Printf("Last Value Estimate: %s\n", format.Currency(*propertyDetails.LastValueEstimate, "USD"))
 		}
 
 		if propertyDetails.LastRentEstimate != nil {
-			fmt.Printf("Last Rent Estimate: %s/month\n", formatCurrency(*propertyDetails.LastRentEstimate, "USD"))
+			fmt.Printf("Last Rent Estimate: %s/month\n", format.Currency(*propertyDetails.LastRentEstimate, "USD"))
 		}
 
 		if propertyDetails.LastUpdated != nil {
