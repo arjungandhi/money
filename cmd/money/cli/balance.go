@@ -95,15 +95,12 @@ var Balance = &Z.Cmd{
 		}
 
 		// Show properly aligned current balances table
-		fmt.Println()
-		fmt.Println()
-		fmt.Println("Current Account Balances")
-		fmt.Println(strings.Repeat("=", 70))
+		fmt.Println("\n💰 Account Balances")
+		fmt.Println(strings.Repeat("─", 50))
 
 		// Create tabwriter for proper alignment
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "Type\tInstitution\tAccount\tBalance\n")
-		fmt.Fprintf(w, "────\t───────────\t───────\t───────\n")
+		fmt.Fprintf(w, "Account\tInstitution\tBalance\n")
 
 		// Initialize property service for property account details
 		propertyService := property.NewService(db)
@@ -137,23 +134,20 @@ var Balance = &Z.Cmd{
 			// Truncate institution name if too long
 			institutionName = truncateString(institutionName, 15)
 
-			fmt.Fprintf(w, "%s %s\t%s\t%s\t%s\n",
-				typeIcon, strings.Title(accountType), institutionName, displayName, balanceStr)
+			fmt.Fprintf(w, "%s %s\t%s\t%s\n",
+				typeIcon, displayName, institutionName, balanceStr)
 			totalNetWorth += int64(account.Balance)
 		}
 
 		w.Flush()
 
 		// Show totals by account type
-		fmt.Println(strings.Repeat("=", 70))
-		fmt.Println()
-		fmt.Println("Totals by Account Type")
-		fmt.Println(strings.Repeat("=", 70))
+		fmt.Println("\n📊 Summary by Type")
+		fmt.Println(strings.Repeat("─", 50))
 
 		// Create tabwriter for totals table
 		wTotals := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(wTotals, "Account Type\tTotal Balance\tAccount Count\n")
-		fmt.Fprintf(wTotals, "────────────\t─────────────\t─────────────\n")
+		fmt.Fprintf(wTotals, "Type\tTotal\tAccounts\n")
 
 		// Calculate totals by account type
 		accountTypeTotals := make(map[string]int64)
@@ -186,11 +180,7 @@ var Balance = &Z.Cmd{
 
 		wTotals.Flush()
 
-		fmt.Println(strings.Repeat("=", 70))
-		fmt.Println()
-		fmt.Printf("💰 Net Worth: %s\n", format.Currency(int(totalNetWorth), "USD"))
-		fmt.Println()
-		fmt.Println(strings.Repeat("=", 70))
+		fmt.Printf("\n🏆 Net Worth: %s\n", format.Currency(int(totalNetWorth), "USD"))
 
 		return nil
 		})
@@ -395,7 +385,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 	}
 
 	// Create three separate charts: Non-Cash, Cash, and Net Worth
-	fmt.Printf("\n📊 Balance Trends (Last %d Days)\n", days)
+	fmt.Printf("📊 Trends (Last %d Days)\n", days)
 
 	// Define account categories
 	cashAccountTypes := map[string]bool{
@@ -424,7 +414,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 	}
 
 	if len(nonCashSumSeries) > 0 {
-		displaySingleChart("💰 Non-Cash Accounts", nonCashSumSeries, asciigraph.Blue, days)
+		displaySingleChart("💰 Non-Cash", nonCashSumSeries, asciigraph.Blue, days)
 	}
 
 	// 2. CASH ACCOUNTS CHART (sum all cash account types)
@@ -440,7 +430,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 	}
 
 	if len(cashSumSeries) > 0 {
-		displaySingleChart("💵 Cash Accounts", cashSumSeries, asciigraph.Green, days)
+		displaySingleChart("💵 Cash", cashSumSeries, asciigraph.Green, days)
 	}
 
 	// 3. NET WORTH CHART
