@@ -97,7 +97,9 @@ var Balance = &Z.Cmd{
 		}
 
 		// Show properly aligned current balances table
-		fmt.Println("\nCurrent Account Balances")
+		fmt.Println()
+		fmt.Println()
+		fmt.Println("Current Account Balances")
 		fmt.Println(strings.Repeat("=", 70))
 
 		// Create tabwriter for proper alignment
@@ -144,8 +146,58 @@ var Balance = &Z.Cmd{
 
 		w.Flush()
 
+		// Show totals by account type
 		fmt.Println(strings.Repeat("=", 70))
+		fmt.Println()
+		fmt.Println("Totals by Account Type")
+		fmt.Println(strings.Repeat("=", 70))
+
+		// Create tabwriter for totals table
+		wTotals := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(wTotals, "Account Type\tTotal Balance\tAccount Count\n")
+		fmt.Fprintf(wTotals, "────────────\t─────────────\t─────────────\n")
+
+		// Calculate totals by account type
+		accountTypeTotals := make(map[string]int64)
+		accountTypeCounts := make(map[string]int)
+
+		for _, account := range accounts {
+			accountType := "unset"
+			if account.AccountType != nil {
+				accountType = *account.AccountType
+			}
+			accountTypeTotals[accountType] += int64(account.Balance)
+			accountTypeCounts[accountType]++
+		}
+
+		// Display totals in the same order as main table
+		for _, accountType := range typeOrder {
+			if total, exists := accountTypeTotals[accountType]; exists {
+				typeIcon := getTypeIcon(accountType)
+				count := accountTypeCounts[accountType]
+				totalStr := formatCurrency(int(total), "USD")
+
+				// Use consistent formatting for account type names
+				accountTypeName := strings.Title(accountType)
+				var displayName string
+				// Add extra space for property emoji which renders wider
+				if accountType == "property" {
+					displayName = fmt.Sprintf("%s  %s", typeIcon, accountTypeName)
+				} else {
+					displayName = fmt.Sprintf("%s %s", typeIcon, accountTypeName)
+				}
+
+				fmt.Fprintf(wTotals, "%s\t%s\t%d\n",
+					displayName, totalStr, count)
+			}
+		}
+
+		wTotals.Flush()
+
+		fmt.Println(strings.Repeat("=", 70))
+		fmt.Println()
 		fmt.Printf("💰 Net Worth: %s\n", formatCurrency(int(totalNetWorth), "USD"))
+		fmt.Println()
 		fmt.Println(strings.Repeat("=", 70))
 
 		return nil
@@ -283,9 +335,6 @@ func getTypeDisplayName(accountType string) string {
 
 // displayBalanceTrends shows an ASCII graph of balance trends over time grouped by account type
 func displayBalanceTrends(db *database.DB, accounts []database.Account, days int) error {
-	fmt.Println()
-	fmt.Printf("Balance Trends (Last %d Days)\n", days)
-	fmt.Println(strings.Repeat("=", 30))
 
 	// Get all balance history for the period
 	history, err := db.GetAllBalanceHistory(days)
@@ -364,6 +413,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 		return nil
 	}
 
+
 	// Create multi-line graph with different series for each account type
 	typeOrder := []string{"checking", "savings", "investment", "credit", "loan", "property", "other", "unset"}
 	var allSeries [][]float64
@@ -390,15 +440,18 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 			continue
 		}
 
-		// Prepare data for this account type - only include dates with actual data
+		// Prepare data for this account type - maintain alignment with dates array
 		var values []float64
 		var hasData bool
+		var lastKnownBalance float64
+
 		for _, date := range dates {
 			if balance, dateExists := typeHistory[date]; dateExists {
-				values = append(values, float64(balance)/100.0) // Convert cents to dollars
+				lastKnownBalance = float64(balance) / 100.0 // Convert cents to dollars
 				hasData = true
 			}
-			// Don't pad with zeros or previous values - only use actual data points
+			// Use the last known balance for dates without data to maintain proper alignment
+			values = append(values, lastKnownBalance)
 		}
 
 		if !hasData {
@@ -409,6 +462,7 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 		activeTypes = append(activeTypes, accountType) // Track active types
 		typeDisplayName := getTypeDisplayName(accountType)
 		seriesLabels = append(seriesLabels, typeDisplayName)
+
 		if color, exists := colorMap[accountType]; exists {
 			seriesColors = append(seriesColors, color)
 		} else {
@@ -416,95 +470,278 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 		}
 	}
 
-	// Display the multi-series graph if we have data
-	if len(allSeries) > 0 {
-		fmt.Printf("\n📊 Balance Trends by Account Type\n")
+	// Create three separate charts: Non-Cash, Cash, and Net Worth
+	fmt.Printf("\n📊 Balance Trends (Last %d Days)\n", days)
 
-		// Calculate appropriate y-axis bounds
-		var minVal, maxVal float64
-		if len(allSeries) > 0 && len(allSeries[0]) > 0 {
-			minVal = allSeries[0][0]
-			maxVal = allSeries[0][0]
-			for _, series := range allSeries {
-				for _, value := range series {
-					if value < minVal {
-						minVal = value
-					}
-					if value > maxVal {
-						maxVal = value
-					}
-				}
+	// Define account categories
+	cashAccountTypes := map[string]bool{
+		"checking": true,
+		"savings":  true,
+		"credit":   true,
+	}
+
+	nonCashAccountTypes := map[string]bool{
+		"investment": true,
+		"property":   true,
+		"loan":       true,
+		"other":      true,
+	}
+
+	// 1. NON-CASH ACCOUNTS CHART (sum all non-cash account types)
+	var nonCashSumSeries []float64
+	for dateIdx := range dates {
+		var dailyNonCashSum float64
+		for i, accountType := range activeTypes {
+			if nonCashAccountTypes[accountType] && dateIdx < len(allSeries[i]) {
+				dailyNonCashSum += allSeries[i][dateIdx]
+			}
+		}
+		nonCashSumSeries = append(nonCashSumSeries, dailyNonCashSum)
+	}
+
+	if len(nonCashSumSeries) > 0 {
+		displaySingleChart("💰 Non-Cash Accounts", nonCashSumSeries, asciigraph.Blue, days)
+	}
+
+	// 2. CASH ACCOUNTS CHART (sum all cash account types)
+	var cashSumSeries []float64
+	for dateIdx := range dates {
+		var dailyCashSum float64
+		for i, accountType := range activeTypes {
+			if cashAccountTypes[accountType] && dateIdx < len(allSeries[i]) {
+				dailyCashSum += allSeries[i][dateIdx]
+			}
+		}
+		cashSumSeries = append(cashSumSeries, dailyCashSum)
+	}
+
+	if len(cashSumSeries) > 0 {
+		displaySingleChart("💵 Cash Accounts", cashSumSeries, asciigraph.Green, days)
+	}
+
+	// 3. NET WORTH CHART
+	// Calculate daily net worth across all account types
+	var netWorthSeries []float64
+	for dateIdx := range dates {
+		var dailyNetWorth float64
+		for _, series := range allSeries {
+			if dateIdx < len(series) {
+				dailyNetWorth += series[dateIdx]
+			}
+		}
+		netWorthSeries = append(netWorthSeries, dailyNetWorth)
+	}
+
+	if len(netWorthSeries) > 1 {
+		// Check for meaningful variation in net worth
+		minNetWorth := netWorthSeries[0]
+		maxNetWorth := netWorthSeries[0]
+		for _, val := range netWorthSeries {
+			if val < minNetWorth {
+				minNetWorth = val
+			}
+			if val > maxNetWorth {
+				maxNetWorth = val
 			}
 		}
 
-		// Create multi-series plot with proper bounds and legends
-		graph := asciigraph.PlotMany(allSeries,
-			asciigraph.Height(12),
-			asciigraph.Width(70),
-			asciigraph.LowerBound(minVal*0.95), // Add some padding below
-			asciigraph.UpperBound(maxVal*1.05), // Add some padding above
-			asciigraph.SeriesColors(seriesColors...),
-			asciigraph.SeriesLegends(seriesLabels...),
-			asciigraph.Caption(fmt.Sprintf("Balance Trends (Last %d Days)", days)))
-		fmt.Println(graph)
+		variation := maxNetWorth - minNetWorth
+		if variation > 10.0 {
+			fmt.Printf("\n🏆 Net Worth:\n")
 
-		// Show trend summary
-		fmt.Println("\nTrend Summary:")
-		for i, label := range seriesLabels {
-			typeIcon := getTypeIcon(activeTypes[i])
-			currentValue := allSeries[i][len(allSeries[i])-1]
+			// Use tight bounds for net worth graph that don't start from 0
+			padding := variation * 0.05 // 5% padding on each side
+			lowerBound := minNetWorth - padding
+			upperBound := maxNetWorth + padding
+
+			netWorthGraph := asciigraph.Plot(netWorthSeries,
+				asciigraph.Height(8),
+				asciigraph.Width(70),
+				asciigraph.LowerBound(lowerBound),
+				asciigraph.UpperBound(upperBound),
+				asciigraph.SeriesColors(asciigraph.Green))
+			fmt.Println(netWorthGraph)
+
+			// Show net worth trend summary
+			netWorthChange := netWorthSeries[len(netWorthSeries)-1] - netWorthSeries[0]
+			netWorthChangePercent := 0.0
+			if netWorthSeries[0] != 0 {
+				netWorthChangePercent = (netWorthChange / netWorthSeries[0]) * 100
+			}
 
 			var trend string
-			if len(allSeries[i]) > 1 {
-				startValue := allSeries[i][0]
-				change := currentValue - startValue
-				changePercent := 0.0
-				if startValue != 0 {
-					changePercent = (change / startValue) * 100
-				}
-
-				if change > 0 {
-					trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", formatWithCommas(int64(change)), changePercent)
-				} else if change < 0 {
-					trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", formatWithCommas(int64(-change)), changePercent)
-				} else {
-					trend = " (→ No change)"
-				}
-			}
-
-			fmt.Printf("  %s %s: %s%s\n",
-				typeIcon, label, formatCurrency(int(currentValue*100), "USD"), trend)
-		}
-
-		// Calculate and show net worth
-		if len(allSeries) > 1 {
-			var netWorthStart, netWorthCurrent float64
-			for _, series := range allSeries {
-				// Include all account types in net worth calculation
-				// Credit and loan balances are already negative in the data
-				netWorthStart += series[0]
-				netWorthCurrent += series[len(series)-1]
-			}
-
-			netWorthChange := netWorthCurrent - netWorthStart
-			netWorthChangePercent := 0.0
-			if netWorthStart != 0 {
-				netWorthChangePercent = (netWorthChange / netWorthStart) * 100
-			}
-
-			fmt.Printf("\n💰 Net Worth: %s", formatCurrency(int(netWorthCurrent*100), "USD"))
 			if netWorthChange > 0 {
-				fmt.Printf(" (↑ $%s, +%.1f%% over %d days)",
-					formatWithCommas(int64(netWorthChange)), netWorthChangePercent, days)
+				trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", formatWithCommas(int64(netWorthChange)), netWorthChangePercent)
 			} else if netWorthChange < 0 {
-				fmt.Printf(" (↓ $%s, %.1f%% over %d days)",
-					formatWithCommas(int64(-netWorthChange)), netWorthChangePercent, days)
+				trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", formatWithCommas(int64(-netWorthChange)), netWorthChangePercent)
 			} else {
-				fmt.Printf(" (→ No change over %d days)", days)
+				trend = " (→ No change)"
 			}
-			fmt.Println()
+
+			fmt.Printf("Current Net Worth: %s%s\n",
+				formatCurrency(int(netWorthSeries[len(netWorthSeries)-1]*100), "USD"), trend)
 		}
 	}
 
 	return nil
+}
+
+// displayChart shows a chart for a specific category of accounts
+func displayChart(title string, series [][]float64, labels []string, colors []asciigraph.AnsiColor, accountTypes []string, days int) {
+	if len(series) == 0 {
+		return
+	}
+
+	fmt.Printf("\n%s:\n", title)
+
+	// Check if any series have meaningful variations
+	hasVariation := false
+	for _, s := range series {
+		if len(s) > 1 {
+			minVal := s[0]
+			maxVal := s[0]
+			for _, val := range s {
+				if val < minVal {
+					minVal = val
+				}
+				if val > maxVal {
+					maxVal = val
+				}
+			}
+			variation := maxVal - minVal
+			relativeVariation := 0.0
+			if minVal != 0 {
+				relativeVariation = variation / minVal * 100
+			}
+			if variation > 10.0 || relativeVariation > 0.1 {
+				hasVariation = true
+				break
+			}
+		}
+	}
+
+	if !hasVariation {
+		fmt.Printf("  No significant variations detected in the last %d days\n", days)
+		return
+	}
+
+	// Show individual graphs for account types with meaningful variations
+	for i, s := range series {
+		minVal := s[0]
+		maxVal := s[0]
+		for _, val := range s {
+			if val < minVal {
+				minVal = val
+			}
+			if val > maxVal {
+				maxVal = val
+			}
+		}
+
+		variation := maxVal - minVal
+		relativeVariation := 0.0
+		if minVal != 0 {
+			relativeVariation = variation / minVal * 100
+		}
+
+		// Only show graphs for account types with meaningful variation
+		if variation > 10.0 || relativeVariation > 0.1 {
+			fmt.Printf("  %s %s:\n", getTypeIcon(accountTypes[i]), labels[i])
+
+			// Use tight bounds that don't start from 0 to better show variation
+			padding := variation * 0.05 // 5% padding on each side
+			lowerBound := minVal - padding
+			upperBound := maxVal + padding
+
+			individualGraph := asciigraph.Plot(s,
+				asciigraph.Height(6),
+				asciigraph.Width(60),
+				asciigraph.LowerBound(lowerBound),
+				asciigraph.UpperBound(upperBound),
+				asciigraph.SeriesColors(colors[i]))
+			fmt.Println(individualGraph)
+
+			// Show trend for this account type
+			change := s[len(s)-1] - s[0]
+			changePercent := 0.0
+			if s[0] != 0 {
+				changePercent = (change / s[0]) * 100
+			}
+
+			var trend string
+			if change > 0 {
+				trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", formatWithCommas(int64(change)), changePercent)
+			} else if change < 0 {
+				trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", formatWithCommas(int64(-change)), changePercent)
+			} else {
+				trend = " (→ No change)"
+			}
+
+			fmt.Printf("    Current: %s%s\n", formatCurrency(int(s[len(s)-1]*100), "USD"), trend)
+		}
+	}
+}
+
+// displaySingleChart shows a chart for a single summed category
+func displaySingleChart(title string, series []float64, color asciigraph.AnsiColor, days int) {
+	if len(series) <= 1 {
+		fmt.Printf("\n%s:\n  Not enough data points\n", title)
+		return
+	}
+
+	// Check for meaningful variation
+	minVal := series[0]
+	maxVal := series[0]
+	for _, val := range series {
+		if val < minVal {
+			minVal = val
+		}
+		if val > maxVal {
+			maxVal = val
+		}
+	}
+
+	variation := maxVal - minVal
+	relativeVariation := 0.0
+	if minVal != 0 {
+		relativeVariation = variation / minVal * 100
+	}
+
+	if variation <= 10.0 && relativeVariation <= 0.1 {
+		fmt.Printf("\n%s:\n  No significant variations detected in the last %d days\n", title, days)
+		return
+	}
+
+	fmt.Printf("\n%s:\n", title)
+
+	// Use tight bounds that don't start from 0
+	padding := variation * 0.05 // 5% padding on each side
+	lowerBound := minVal - padding
+	upperBound := maxVal + padding
+
+	graph := asciigraph.Plot(series,
+		asciigraph.Height(8),
+		asciigraph.Width(70),
+		asciigraph.LowerBound(lowerBound),
+		asciigraph.UpperBound(upperBound),
+		asciigraph.SeriesColors(color))
+	fmt.Println(graph)
+
+	// Show trend summary
+	change := series[len(series)-1] - series[0]
+	changePercent := 0.0
+	if series[0] != 0 {
+		changePercent = (change / series[0]) * 100
+	}
+
+	var trend string
+	if change > 0 {
+		trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", formatWithCommas(int64(change)), changePercent)
+	} else if change < 0 {
+		trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", formatWithCommas(int64(-change)), changePercent)
+	} else {
+		trend = " (→ No change)"
+	}
+
+	fmt.Printf("Current Total: %s%s\n", formatCurrency(int(series[len(series)-1]*100), "USD"), trend)
 }
