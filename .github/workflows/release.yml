@@ -10,11 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        goos: [linux, windows, darwin]
+        goos: [linux, darwin]
         goarch: [amd64, arm64]
-        exclude:
-          - goarch: arm64
-            goos: windows
     steps:
     - uses: actions/checkout@v4
 
@@ -30,22 +27,11 @@ jobs:
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
+        VERSION: ${{ github.ref_name }}
       run: |
-        BINARY_NAME=money
-        if [ "$GOOS" = "windows" ]; then
-          BINARY_NAME="${BINARY_NAME}.exe"
-        fi
-        go build -o "${BINARY_NAME}" ./cmd/money
-
-        # Create archive
-        ARCHIVE_NAME="money-${{ matrix.goos }}-${{ matrix.goarch }}"
-        if [ "$GOOS" = "windows" ]; then
-          zip "${ARCHIVE_NAME}.zip" "${BINARY_NAME}"
-          echo "ASSET=${ARCHIVE_NAME}.zip" >> $GITHUB_ENV
-        else
-          tar -czf "${ARCHIVE_NAME}.tar.gz" "${BINARY_NAME}"
-          echo "ASSET=${ARCHIVE_NAME}.tar.gz" >> $GITHUB_ENV
-        fi
+        BINARY_NAME="money-${{ matrix.goos }}-${{ matrix.goarch }}"
+        go build -ldflags="-s -w -X 'github.com/arjungandhi/money/pkg/version.Version=$VERSION'" -o "${BINARY_NAME}" ./cmd/money
+        echo "ASSET=${BINARY_NAME}" >> $GITHUB_ENV
 
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
