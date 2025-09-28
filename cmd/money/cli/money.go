@@ -15,8 +15,7 @@ var Cmd = &Z.Cmd{
 		Balance,
 		Accounts,
 		Property,
-		Costs,
-		Income,
+		Budget,
 		Transactions,
 	},
 }

@@ -24,10 +24,11 @@
   - `money accounts type clear <account-id>`: clear account type (set to unset)
   - `money accounts nickname set <account-id> <nickname>`: set a custom nickname for an account
   - `money accounts nickname clear <account-id>`: remove custom nickname (revert to original name)
-- `money costs`: shows a breakdown of all costs by category for a given time period (default this month)
-  - `--days|-d <number>`: show costs for the last N days (overrides other date options)
-- `money income`: shows a breakdown of all income by category for a given time period (default this month)
-  - `--days|-d <number>`: show income for the last N days (overrides other date options)
+- `money budget`: shows a comprehensive budget view with income, expenses, and net cash flow by category for a given time period (default this month)
+  - `--days|-d <number>`: show budget for the last N days (overrides other date options)
+  - `--income-only`: show only income breakdown by category
+  - `--expenses-only`: show only expenses breakdown by category
+  - Shows three sections: Income, Expenses, and Net Cash Flow summary with totals
 - `money transactions`: manage and view transactions 
     - `money transactions list [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--account <account-id>] [--category <category-name>]`: list transactions with optional filtering by date range, account, or category
     - `money transactions categorize`: interactively categorize uncategorized transactions via llm.
