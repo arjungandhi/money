@@ -29,6 +29,7 @@
   - `--income-only`: show only income breakdown by category
   - `--expenses-only`: show only expenses breakdown by category
   - Shows three sections: Income, Expenses, and Net Cash Flow summary with totals
+  - Excludes transactions in internal categories (like transfers between user's own accounts) from budget calculations
 - `money transactions`: manage and view transactions 
     - `money transactions list [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--account <account-id>] [--category <category-name>]`: list transactions with optional filtering by date range, account, or category
     - `money transactions categorize`: interactively categorize uncategorized transactions via llm.
@@ -45,6 +46,7 @@
           - Vim-like modal interface with normal/insert/visual modes
         - `money transactions categorize modify <transaction-id> <category-name>`: manually set or change the category of a specific transaction
         - `money transactions categorize clear <transaction-id>`: clear the category of a specific transaction (set to uncategorized)
+        - `money transactions categorize recategorize`: re-run categorization on all previously categorized transactions
 - `money transactions category`: manage transaction categories
   - `money transactions category list`: show all existing categories with their internal status
   - `money transactions category add <name> [--internal]`: add a new category, optionally marking it as internal
@@ -60,6 +62,21 @@
   - `money property update-all`: update valuations for all property accounts using RentCast API
   - `money property details <account-id>`: show detailed information for a specific property
 
+# Internal Categories
+
+Internal categories provide a way to exclude certain transaction types from budget calculations. This is primarily useful for:
+
+- **Transfers between accounts**: Money moved between the user's own accounts (checking to savings, credit card payments from checking, etc.)
+- **Investment transactions**: Contributions to retirement accounts, stock purchases, etc. that represent asset allocation rather than expenses
+- **Loan principal payments**: Principal portions of loan payments that reduce debt rather than representing spending
+
+Key features:
+- Categories are marked as internal via the `is_internal` boolean flag in the database
+- Transactions categorized with internal categories are excluded from budget income/expense calculations
+- Default seed categories include "Transfers" as an internal category
+- LLM categorization automatically handles both regular and internal categories in a unified approach
+- CLI commands allow setting/clearing the internal flag: `category set-internal` and `category clear-internal`
+
 # Tech Stack
 1. language: Go
 2. cli library: github.com/rwxrob/bonzai v0.20.10:
@@ -74,7 +91,10 @@
    - github.com/Evertras/bubble-table for spreadsheet-style transaction categorization
    - github.com/charmbracelet/lipgloss for styling and layout
 6. LLM integration: For transaction categorization via `money categorize` command
-   - API service for LLM calls (OpenAI/Anthropic/local model TBD)
+   - Configurable external command via LLM_PROMPT_CMD environment variable
+   - Unified categorization approach that handles both regular and internal categories
+   - Dynamic category separation based on user's internal flag settings
+   - Account context provided to LLM for better transfer detection
    - Interactive prompting for category review and adjustment
 
 # Database Schema
