@@ -13,7 +13,7 @@ func TestNewClient(t *testing.T) {
 		t.Error("NewClient should return a non-nil client")
 	}
 
-	if client.promptCommand == "" {
+	if client.config.LLMPromptCmd == "" {
 		t.Error("Client should have a default command")
 	}
 }

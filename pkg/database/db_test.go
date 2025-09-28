@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/arjungandhi/money/pkg/config"
 )
 
 func TestNew(t *testing.T) {
@@ -74,13 +76,15 @@ func TestGetMoneyDir(t *testing.T) {
 	os.Setenv("MONEY_DIR", testDir)
 	defer os.Setenv("MONEY_DIR", oldMoneyDir)
 
-	dir := getMoneyDir()
+	cfg := config.New()
+	dir := cfg.MoneyDir
 	if dir != testDir {
 		t.Errorf("Expected %s, got %s", testDir, dir)
 	}
 
 	os.Unsetenv("MONEY_DIR")
-	dir = getMoneyDir()
+	cfg = config.New()
+	dir = cfg.MoneyDir
 
 	home, _ := os.UserHomeDir()
 	expected := filepath.Join(home, ".money")

@@ -152,7 +152,7 @@ var TransactionsList = &Z.Cmd{
 		config.Title = fmt.Sprintf("Found %d transactions", len(transactions))
 		config.MaxColumnWidth = 50
 
-		t := table.NewWithConfig(config, "Date", "Account", "Amount", "Description", "Category")
+		t := table.NewWithConfig(config, "ID", "Date", "Account", "Amount", "Description", "Category")
 
 		for _, txn := range transactions {
 			// Parse date for display
@@ -184,7 +184,7 @@ var TransactionsList = &Z.Cmd{
 			// Apply color to category
 			coloredCategory := colorizeCategory(categoryStr)
 
-			t.AddRow(dateStr, accountDisplay, coloredAmount, txn.Description, coloredCategory)
+			t.AddRow(txn.ID, dateStr, accountDisplay, coloredAmount, txn.Description, coloredCategory)
 		}
 
 		if err := t.Render(); err != nil {
