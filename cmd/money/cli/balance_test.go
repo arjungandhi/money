@@ -4,7 +4,6 @@ import (
 	"testing"
 )
 
-
 func TestGetTypeIcon(t *testing.T) {
 	tests := []struct {
 		accountType string

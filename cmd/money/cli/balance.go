@@ -38,160 +38,148 @@ var Balance = &Z.Cmd{
 
 		return dbutil.WithDatabase(func(db *database.DB) error {
 
-		// Get all accounts
-		accounts, err := db.GetAccounts()
-		if err != nil {
-			return fmt.Errorf("failed to get accounts: %w", err)
-		}
-
-		if len(accounts) == 0 {
-			fmt.Println("No accounts found. Run 'money fetch' to sync your financial data.")
-			return nil
-		}
-
-		// Get all organizations
-		orgs, err := db.GetOrganizations()
-		if err != nil {
-			return fmt.Errorf("failed to get organizations: %w", err)
-		}
-
-		// Create organization lookup map
-		orgMap := make(map[string]database.Organization)
-		for _, org := range orgs {
-			orgMap[org.ID] = org
-		}
-
-		// Group accounts by account type, then by organization
-		accountsByTypeAndOrg := make(map[string]map[string][]database.Account)
-		for _, account := range accounts {
-			accountType := "unset"
-			if account.AccountType != nil {
-				accountType = *account.AccountType
+			// Get all accounts
+			accounts, err := db.GetAccounts()
+			if err != nil {
+				return fmt.Errorf("failed to get accounts: %w", err)
 			}
 
-			if accountsByTypeAndOrg[accountType] == nil {
-				accountsByTypeAndOrg[accountType] = make(map[string][]database.Account)
-			}
-			accountsByTypeAndOrg[accountType][account.OrgID] = append(accountsByTypeAndOrg[accountType][account.OrgID], account)
-		}
-
-		// Define account type order (unset at the end)
-		typeOrder := []string{"checking", "savings", "credit", "investment", "loan", "property", "other", "unset"}
-		var accountTypes []string
-
-		// Add types in preferred order if they exist
-		for _, accountType := range typeOrder {
-			if _, exists := accountsByTypeAndOrg[accountType]; exists {
-				accountTypes = append(accountTypes, accountType)
-			}
-		}
-
-		// Display balance trend graph first
-		err = displayBalanceTrends(db, accounts, days)
-		if err != nil {
-			// Don't fail the command if graph generation fails, just log a warning
-			fmt.Printf("Warning: could not generate balance trend graph: %v\n", err)
-		}
-
-		// Create account balances table
-		config := table.DefaultConfig()
-		config.Title = "💰 Account Balances"
-		config.MaxColumnWidth = 30
-
-		balancesTable := table.NewWithConfig(config, "Account", "Institution", "Balance")
-
-		// Initialize property service for property account details
-		propertyService := property.NewService(db)
-
-		var totalNetWorth int64
-		for _, account := range accounts {
-			accountType := "unset"
-			if account.AccountType != nil {
-				accountType = *account.AccountType
+			if len(accounts) == 0 {
+				fmt.Println("No accounts found. Run 'money fetch' to sync your financial data.")
+				return nil
 			}
 
-			typeIcon := getTypeIcon(accountType)
-			balanceStr := format.Currency(account.Balance, account.Currency)
-
-			// Get institution name
-			institutionName := account.OrgID // fallback to ID
-			if org, exists := orgMap[account.OrgID]; exists {
-				institutionName = org.Name
+			// Get all organizations
+			orgs, err := db.GetOrganizations()
+			if err != nil {
+				return fmt.Errorf("failed to get organizations: %w", err)
 			}
 
-			// For property accounts, show address instead of institution
-			displayName := account.DisplayName()
-			if accountType == "property" {
-				if propertyDetails, err := propertyService.GetPropertyDetails(account.ID); err == nil {
-					institutionName = "Property"
-					displayName = fmt.Sprintf("%s, %s", propertyDetails.Address, propertyDetails.City)
+			// Create organization lookup map
+			orgMap := make(map[string]database.Organization)
+			for _, org := range orgs {
+				orgMap[org.ID] = org
+			}
+
+			// Group accounts by account type, then by organization
+			accountsByTypeAndOrg := make(map[string]map[string][]database.Account)
+			for _, account := range accounts {
+				accountType := "unset"
+				if account.AccountType != nil {
+					accountType = *account.AccountType
+				}
+
+				if accountsByTypeAndOrg[accountType] == nil {
+					accountsByTypeAndOrg[accountType] = make(map[string][]database.Account)
+				}
+				accountsByTypeAndOrg[accountType][account.OrgID] = append(accountsByTypeAndOrg[accountType][account.OrgID], account)
+			}
+
+			// Define account type order (unset at the end)
+			typeOrder := []string{"checking", "savings", "credit", "investment", "loan", "property", "other", "unset"}
+			var accountTypes []string
+
+			// Add types in preferred order if they exist
+			for _, accountType := range typeOrder {
+				if _, exists := accountsByTypeAndOrg[accountType]; exists {
+					accountTypes = append(accountTypes, accountType)
 				}
 			}
 
-			accountDisplayName := fmt.Sprintf("%s %s", typeIcon, displayName)
-			balancesTable.AddRow(accountDisplayName, institutionName, balanceStr)
-			totalNetWorth += int64(account.Balance)
-		}
-
-		if err := balancesTable.Render(); err != nil {
-			return fmt.Errorf("failed to render balances table: %w", err)
-		}
-
-		// Show totals by account type
-		fmt.Println("\n📊 Summary by Type")
-		fmt.Println(strings.Repeat("─", 50))
-
-		// Calculate totals by account type
-		accountTypeTotals := make(map[string]int64)
-		accountTypeCounts := make(map[string]int)
-
-		for _, account := range accounts {
-			accountType := "unset"
-			if account.AccountType != nil {
-				accountType = *account.AccountType
+			// Display balance trend graph first
+			err = displayBalanceTrends(db, accounts, days)
+			if err != nil {
+				// Don't fail the command if graph generation fails, just log a warning
+				fmt.Printf("Warning: could not generate balance trend graph: %v\n", err)
 			}
-			accountTypeTotals[accountType] += int64(account.Balance)
-			accountTypeCounts[accountType]++
-		}
 
-		// Create summary table
-		summaryTable := table.New("Type", "Total", "Accounts")
+			// Create account balances table
+			config := table.DefaultConfig()
+			config.Title = "💰 Account Balances"
+			config.MaxColumnWidth = 30
 
-		// Display totals in the same order as main table
-		for _, accountType := range typeOrder {
-			if total, exists := accountTypeTotals[accountType]; exists {
+			balancesTable := table.NewWithConfig(config, "Account", "Institution", "Balance")
+
+			// Initialize property service for property account details
+			propertyService := property.NewService(db)
+
+			var totalNetWorth int64
+			for _, account := range accounts {
+				accountType := "unset"
+				if account.AccountType != nil {
+					accountType = *account.AccountType
+				}
+
 				typeIcon := getTypeIcon(accountType)
-				count := accountTypeCounts[accountType]
-				totalStr := format.Currency(int(total), "USD")
+				balanceStr := format.Currency(account.Balance, account.Currency)
 
-				// Use consistent formatting for account type names
-				accountTypeName := strings.Title(accountType)
-				displayName := fmt.Sprintf("%s %s", typeIcon, accountTypeName)
+				// Get institution name
+				institutionName := account.OrgID // fallback to ID
+				if org, exists := orgMap[account.OrgID]; exists {
+					institutionName = org.Name
+				}
 
-				summaryTable.AddRow(displayName, totalStr, fmt.Sprintf("%d", count))
+				// For property accounts, show address instead of institution
+				displayName := account.DisplayName()
+				if accountType == "property" {
+					if propertyDetails, err := propertyService.GetPropertyDetails(account.ID); err == nil {
+						institutionName = "Property"
+						displayName = fmt.Sprintf("%s, %s", propertyDetails.Address, propertyDetails.City)
+					}
+				}
+
+				accountDisplayName := fmt.Sprintf("%s %s", typeIcon, displayName)
+				balancesTable.AddRow(accountDisplayName, institutionName, balanceStr)
+				totalNetWorth += int64(account.Balance)
 			}
-		}
 
-		if err := summaryTable.Render(); err != nil {
-			return fmt.Errorf("failed to render summary table: %w", err)
-		}
+			if err := balancesTable.Render(); err != nil {
+				return fmt.Errorf("failed to render balances table: %w", err)
+			}
 
-		return nil
+			// Show totals by account type
+			fmt.Println("\n📊 Summary by Type")
+			fmt.Println(strings.Repeat("─", 50))
+
+			// Calculate totals by account type
+			accountTypeTotals := make(map[string]int64)
+			accountTypeCounts := make(map[string]int)
+
+			for _, account := range accounts {
+				accountType := "unset"
+				if account.AccountType != nil {
+					accountType = *account.AccountType
+				}
+				accountTypeTotals[accountType] += int64(account.Balance)
+				accountTypeCounts[accountType]++
+			}
+
+			// Create summary table
+			summaryTable := table.New("Type", "Total", "Accounts")
+
+			// Display totals in the same order as main table
+			for _, accountType := range typeOrder {
+				if total, exists := accountTypeTotals[accountType]; exists {
+					typeIcon := getTypeIcon(accountType)
+					count := accountTypeCounts[accountType]
+					totalStr := format.Currency(int(total), "USD")
+
+					// Use consistent formatting for account type names
+					accountTypeName := strings.Title(accountType)
+					displayName := fmt.Sprintf("%s %s", typeIcon, accountTypeName)
+
+					summaryTable.AddRow(displayName, totalStr, fmt.Sprintf("%d", count))
+				}
+			}
+
+			if err := summaryTable.Render(); err != nil {
+				return fmt.Errorf("failed to render summary table: %w", err)
+			}
+
+			return nil
 		})
 	},
 }
-
-// truncateString truncates a string to maxLength characters, adding "..." if truncated
-func truncateString(s string, maxLength int) string {
-	if len(s) <= maxLength {
-		return s
-	}
-	if maxLength <= 3 {
-		return s[:maxLength]
-	}
-	return s[:maxLength-3] + "..."
-}
-
 
 // getTypeIcon returns the appropriate emoji for the account type
 func getTypeIcon(accountType string) string {
@@ -320,7 +308,6 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 		fmt.Println("Not enough historical data points to generate a meaningful trend graph.")
 		return nil
 	}
-
 
 	// Create multi-line graph with different series for each account type
 	typeOrder := []string{"checking", "savings", "investment", "credit", "loan", "property", "other", "unset"}
@@ -490,102 +477,6 @@ func displayBalanceTrends(db *database.DB, accounts []database.Account, days int
 	}
 
 	return nil
-}
-
-// displayChart shows a chart for a specific category of accounts
-func displayChart(title string, series [][]float64, labels []string, colors []asciigraph.AnsiColor, accountTypes []string, days int) {
-	if len(series) == 0 {
-		return
-	}
-
-	fmt.Printf("\n%s:\n", title)
-
-	// Check if any series have meaningful variations
-	hasVariation := false
-	for _, s := range series {
-		if len(s) > 1 {
-			minVal := s[0]
-			maxVal := s[0]
-			for _, val := range s {
-				if val < minVal {
-					minVal = val
-				}
-				if val > maxVal {
-					maxVal = val
-				}
-			}
-			variation := maxVal - minVal
-			relativeVariation := 0.0
-			if minVal != 0 {
-				relativeVariation = variation / minVal * 100
-			}
-			if variation > 10.0 || relativeVariation > 0.1 {
-				hasVariation = true
-				break
-			}
-		}
-	}
-
-	if !hasVariation {
-		fmt.Printf("  No significant variations detected in the last %d days\n", days)
-		return
-	}
-
-	// Show individual graphs for account types with meaningful variations
-	for i, s := range series {
-		minVal := s[0]
-		maxVal := s[0]
-		for _, val := range s {
-			if val < minVal {
-				minVal = val
-			}
-			if val > maxVal {
-				maxVal = val
-			}
-		}
-
-		variation := maxVal - minVal
-		relativeVariation := 0.0
-		if minVal != 0 {
-			relativeVariation = variation / minVal * 100
-		}
-
-		// Only show graphs for account types with meaningful variation
-		if variation > 10.0 || relativeVariation > 0.1 {
-			fmt.Printf("  %s %s:\n", getTypeIcon(accountTypes[i]), labels[i])
-
-			// Use tight bounds that don't start from 0 to better show variation
-			padding := variation * 0.05 // 5% padding on each side
-			lowerBound := minVal - padding
-			upperBound := maxVal + padding
-
-			individualGraph := asciigraph.Plot(s,
-				asciigraph.Height(6),
-				asciigraph.Width(60),
-				asciigraph.LowerBound(lowerBound),
-				asciigraph.UpperBound(upperBound),
-				asciigraph.SeriesColors(colors[i]))
-			fmt.Println(individualGraph)
-
-			// Show trend for this account type
-			change := s[len(s)-1] - s[0]
-			changePercent := 0.0
-			if s[0] != 0 {
-				changePercent = (change / s[0]) * 100
-			}
-
-			var trend string
-			if change > 0 {
-				trend = fmt.Sprintf(" (↑ $%s, +%.1f%%)", format.WithCommas(int64(change)), changePercent)
-			} else if change < 0 {
-				trend = fmt.Sprintf(" (↓ $%s, %.1f%%)", format.WithCommas(int64(-change)), changePercent)
-			} else {
-				trend = " (→ No change)"
-			}
-
-			fmt.Printf("    Current: %s%s\n", format.Currency(int(s[len(s)-1]*100), "USD"), trend)
-		}
-	}
 }
 
 // displaySingleChart shows a chart for a single summed category

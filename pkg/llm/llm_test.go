@@ -3,6 +3,8 @@ package llm
 import (
 	"strings"
 	"testing"
+
+	"github.com/arjungandhi/money/pkg/database"
 )
 
 func TestNewClient(t *testing.T) {
@@ -47,17 +49,29 @@ func TestBuildCategorizationPrompt(t *testing.T) {
 		{ID: "tx2", Description: "Grocery Store", Amount: -5000},
 	}
 
-	categories := []string{"Dining Out", "Groceries", "Transportation"}
+	categories := []database.Category{
+		{Name: "Dining Out", IsInternal: false},
+		{Name: "Groceries", IsInternal: false},
+		{Name: "Transportation", IsInternal: false},
+	}
 
-	prompt := buildCategorizationPrompt(transactions, categories)
+	accounts := []AccountData{
+		{ID: "acc1", Name: "Checking Account", AccountType: "checking"},
+	}
+
+	examples := []CategorizedExample{
+		{Description: "Coffee Shop", Amount: -300, Category: "Dining Out"},
+	}
+
+	prompt := buildCategorizationPrompt(transactions, categories, accounts, examples)
 
 	if prompt == "" {
 		t.Error("buildCategorizationPrompt should return non-empty prompt")
 	}
 
 	for _, category := range categories {
-		if !containsIgnoreCase(prompt, category) {
-			t.Errorf("Prompt should contain category '%s'", category)
+		if !containsIgnoreCase(prompt, category.Name) {
+			t.Errorf("Prompt should contain category '%s'", category.Name)
 		}
 	}
 }

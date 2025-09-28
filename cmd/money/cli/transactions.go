@@ -282,7 +282,6 @@ var CategorizeClear = &Z.Cmd{
 	},
 }
 
-
 var CategorizeAuto = &Z.Cmd{
 	Name:     "auto",
 	Summary:  "Automatically categorize transactions using LLM",
@@ -304,7 +303,6 @@ var CategorizeAuto = &Z.Cmd{
 		}
 	},
 }
-
 
 var CategorizeManual = &Z.Cmd{
 	Name:     "manual",

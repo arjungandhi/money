@@ -68,9 +68,9 @@ var PropertyConfig = &Z.Cmd{
 }
 
 var PropertyAdd = &Z.Cmd{
-	Name:     "add",
-	Summary:  "Add a new property account",
-	Usage:    "<name> <address> <city> <state> <zipcode> [property-type] [latitude] [longitude]",
+	Name:    "add",
+	Summary: "Add a new property account",
+	Usage:   "<name> <address> <city> <state> <zipcode> [property-type] [latitude] [longitude]",
 	Description: `
 Add a new property account for tracking real estate in your net worth.
 

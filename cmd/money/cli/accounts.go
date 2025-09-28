@@ -57,53 +57,53 @@ var AccountsList = &Z.Cmd{
 				return fmt.Errorf("failed to get accounts: %w", err)
 			}
 
-		if len(accounts) == 0 {
-			fmt.Println("No accounts found. Run 'money fetch' to sync your financial data.")
+			if len(accounts) == 0 {
+				fmt.Println("No accounts found. Run 'money fetch' to sync your financial data.")
+				return nil
+			}
+
+			// Get organizations for display
+			orgs, err := db.GetOrganizations()
+			if err != nil {
+				return fmt.Errorf("failed to get organizations: %w", err)
+			}
+
+			orgMap := make(map[string]database.Organization)
+			for _, org := range orgs {
+				orgMap[org.ID] = org
+			}
+
+			// Create table for account types
+			config := table.DefaultConfig()
+			config.Title = "Account Types"
+			config.MaxColumnWidth = 30
+
+			t := table.NewWithConfig(config, "Type", "Organization", "Account Name", "Account ID")
+
+			for _, account := range accounts {
+				accountType := "unset"
+				if account.AccountType != nil {
+					accountType = *account.AccountType
+				}
+
+				orgName := account.OrgID
+				if org, exists := orgMap[account.OrgID]; exists {
+					orgName = org.Name
+				}
+
+				// Use DisplayName method to get nickname or original name
+				displayName := account.DisplayName()
+
+				t.AddRow(accountType, orgName, displayName, account.ID)
+			}
+
+			if err := t.Render(); err != nil {
+				return fmt.Errorf("failed to render accounts table: %w", err)
+			}
+			fmt.Println("Available account types: checking, savings, credit, investment, loan, property, other")
+			fmt.Println("Use 'money accounts type set <account-id> <type>' to set an account type")
+
 			return nil
-		}
-
-		// Get organizations for display
-		orgs, err := db.GetOrganizations()
-		if err != nil {
-			return fmt.Errorf("failed to get organizations: %w", err)
-		}
-
-		orgMap := make(map[string]database.Organization)
-		for _, org := range orgs {
-			orgMap[org.ID] = org
-		}
-
-		// Create table for account types
-		config := table.DefaultConfig()
-		config.Title = "Account Types"
-		config.MaxColumnWidth = 30
-
-		t := table.NewWithConfig(config, "Type", "Organization", "Account Name", "Account ID")
-
-		for _, account := range accounts {
-			accountType := "unset"
-			if account.AccountType != nil {
-				accountType = *account.AccountType
-			}
-
-			orgName := account.OrgID
-			if org, exists := orgMap[account.OrgID]; exists {
-				orgName = org.Name
-			}
-
-			// Use DisplayName method to get nickname or original name
-			displayName := account.DisplayName()
-
-			t.AddRow(accountType, orgName, displayName, account.ID)
-		}
-
-		if err := t.Render(); err != nil {
-			return fmt.Errorf("failed to render accounts table: %w", err)
-		}
-		fmt.Println("Available account types: checking, savings, credit, investment, loan, property, other")
-		fmt.Println("Use 'money accounts type set <account-id> <type>' to set an account type")
-
-		return nil
 		})
 	},
 }
@@ -269,10 +269,10 @@ var AccountsNicknameClear = &Z.Cmd{
 }
 
 var AccountsDelete = &Z.Cmd{
-	Name:     "delete",
-	Aliases:  []string{"del", "rm"},
-	Summary:  "Delete an account and all associated data",
-	Usage:    "<account-id>",
+	Name:    "delete",
+	Aliases: []string{"del", "rm"},
+	Summary: "Delete an account and all associated data",
+	Usage:   "<account-id>",
 	Description: `
 Delete an account and all its associated data including:
 - Transaction history

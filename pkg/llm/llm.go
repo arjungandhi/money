@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,34 +49,6 @@ type TransferAnalysisResult struct {
 // CategoryAnalysisResult contains the results of transaction categorization
 type CategoryAnalysisResult struct {
 	Suggestions []CategorySuggestion `json:"suggestions"`
-}
-
-func (c *Client) IdentifyTransfers(ctx context.Context, transactions []TransactionData, accounts []AccountData) (*TransferAnalysisResult, error) {
-	prompt := buildTransferIdentificationPrompt(transactions, accounts)
-
-	response, err := c.runLLMCommand(ctx, prompt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to run LLM command for transfer identification: %w", err)
-	}
-
-	var result TransferAnalysisResult
-	err = json.Unmarshal([]byte(response), &result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse LLM response for transfers: %w", err)
-	}
-
-	return &result, nil
-}
-
-func (c *Client) CategorizeTransactions(ctx context.Context, transactions []TransactionData, categories []string) (*CategoryAnalysisResult, error) {
-	categoryStructs := make([]database.Category, len(categories))
-	for i, cat := range categories {
-		categoryStructs[i] = database.Category{
-			Name:       cat,
-			IsInternal: false,
-		}
-	}
-	return c.CategorizeTransactionsWithExamples(ctx, transactions, categoryStructs, nil, nil)
 }
 
 func (c *Client) CategorizeTransactionsWithExamples(ctx context.Context, transactions []TransactionData, categories []database.Category, accounts []AccountData, examples []CategorizedExample) (*CategoryAnalysisResult, error) {
@@ -340,14 +311,4 @@ Required JSON format:
 Return ONLY the raw JSON object with no markdown formatting:`)
 
 	return prompt.String()
-}
-
-func PromptForApproval(message string) (bool, error) {
-	fmt.Print(message + " (y/N): ")
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		response := strings.ToLower(strings.TrimSpace(scanner.Text()))
-		return response == "y" || response == "yes", nil
-	}
-	return false, scanner.Err()
 }

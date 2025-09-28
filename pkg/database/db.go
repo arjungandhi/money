@@ -1275,44 +1275,6 @@ func (db *DB) SaveBalanceHistory(accountID string, balance int, availableBalance
 	return nil
 }
 
-func (db *DB) GetBalanceHistory(accountID string, days int) ([]BalanceHistory, error) {
-	query := `
-		SELECT id, account_id, balance, available_balance, recorded_at
-		FROM balance_history
-		WHERE account_id = ? AND recorded_at >= datetime('now', '-' || ? || ' days')
-		ORDER BY recorded_at ASC`
-
-	rows, err := db.conn.Query(query, accountID, days)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query balance history: %w", err)
-	}
-	defer rows.Close()
-
-	var history []BalanceHistory
-	for rows.Next() {
-		var bh BalanceHistory
-		var availableBalance sql.NullInt64
-
-		err := rows.Scan(&bh.ID, &bh.AccountID, &bh.Balance, &availableBalance, &bh.RecordedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan balance history: %w", err)
-		}
-
-		if availableBalance.Valid {
-			balance := int(availableBalance.Int64)
-			bh.AvailableBalance = &balance
-		}
-
-		history = append(history, bh)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating balance history: %w", err)
-	}
-
-	return history, nil
-}
-
 func (db *DB) GetAllBalanceHistory(days int) ([]BalanceHistory, error) {
 	query := `
 		SELECT id, account_id, balance, available_balance, recorded_at

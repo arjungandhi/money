@@ -41,22 +41,22 @@ type Config struct {
 
 // TabwriterConfig holds tabwriter-specific configuration
 type TabwriterConfig struct {
-	MinWidth int    // minimum cell width
-	TabWidth int    // tab width
-	Padding  int    // padding added to a cell before computing its width
-	PadChar  byte   // padding character (usually ' ')
-	Flags    uint   // formatting flags
+	MinWidth int  // minimum cell width
+	TabWidth int  // tab width
+	Padding  int  // padding added to a cell before computing its width
+	PadChar  byte // padding character (usually ' ')
+	Flags    uint // formatting flags
 }
 
 // DefaultConfig returns a sensible default configuration
 func DefaultConfig() Config {
 	return Config{
-		ShowHeaders:     true,
-		BoldHeaders:     false,
-		SeparatorChar:   "─",
-		MaxColumnWidth:  50,
-		MinColumnWidth:  0,
-		UseTabwriter:    true,
+		ShowHeaders:    true,
+		BoldHeaders:    false,
+		SeparatorChar:  "─",
+		MaxColumnWidth: 50,
+		MinColumnWidth: 0,
+		UseTabwriter:   true,
 		TabwriterConfig: TabwriterConfig{
 			MinWidth: 0,
 			TabWidth: 8,
@@ -92,22 +92,6 @@ func NewWithConfig(config Config, headers ...string) *Table {
 		)
 	}
 
-	return t
-}
-
-// SetWriter sets the output writer (default: os.Stdout)
-func (t *Table) SetWriter(w io.Writer) *Table {
-	t.writer = w
-	if t.config.UseTabwriter {
-		t.tabwriter = tabwriter.NewWriter(
-			w,
-			t.config.TabwriterConfig.MinWidth,
-			t.config.TabwriterConfig.TabWidth,
-			t.config.TabwriterConfig.Padding,
-			t.config.TabwriterConfig.PadChar,
-			t.config.TabwriterConfig.Flags,
-		)
-	}
 	return t
 }
 
@@ -297,24 +281,4 @@ func (t *Table) renderWithFixedWidth() error {
 	}
 
 	return nil
-}
-
-// Quick creates and renders a simple table in one call
-func Quick(headers []string, rows [][]string) error {
-	t := New(headers...)
-	for _, row := range rows {
-		t.AddRow(row...)
-	}
-	return t.Render()
-}
-
-// QuickWithTitle creates and renders a table with a title
-func QuickWithTitle(title string, headers []string, rows [][]string) error {
-	config := DefaultConfig()
-	config.Title = title
-	t := NewWithConfig(config, headers...)
-	for _, row := range rows {
-		t.AddRow(row...)
-	}
-	return t.Render()
 }
