@@ -30,7 +30,8 @@
   - `--expenses-only`: show only expenses breakdown by category
   - Shows three sections: Income, Expenses, and Net Cash Flow summary with totals
   - Excludes transactions in internal categories (like transfers between user's own accounts) from budget calculations
-- `money transactions`: manage and view transactions 
+- `money transactions`: manage and view transactions
+    - When called without arguments, launches the fast spreadsheet-style TUI for manual transaction categorization
     - `money transactions list [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--account <account-id>] [--category <category-name>]`: list transactions with optional filtering by date range, account, or category
     - `money transactions categorize`: interactively categorize uncategorized transactions via llm.
         - transactions when fetched from simplefin are uncategorized

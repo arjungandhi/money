@@ -67,6 +67,14 @@ var Transactions = &Z.Cmd{
 		TransactionsList,
 		Categorize,
 	},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		// If no arguments provided, run manual categorization
+		if len(args) == 0 {
+			return runManualCategorization()
+		}
+		// Otherwise show help
+		return help.Cmd.Call(cmd, args...)
+	},
 }
 
 var TransactionsList = &Z.Cmd{
