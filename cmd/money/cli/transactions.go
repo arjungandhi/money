@@ -201,6 +201,7 @@ var Categorize = &Z.Cmd{
 		CategorizeClear,
 		CategorizeTransfer,
 		CategorizeAuto,
+		CategorizeManual,
 	},
 }
 
@@ -451,6 +452,15 @@ var CategorySeed = &Z.Cmd{
 
 		fmt.Println("Default categories added successfully")
 		return nil
+	},
+}
+
+var CategorizeManual = &Z.Cmd{
+	Name:     "manual",
+	Summary:  "Interactive manual categorization using spreadsheet-style interface",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		return runManualCategorization()
 	},
 }
 
