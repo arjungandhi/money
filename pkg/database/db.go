@@ -4,9 +4,8 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
-	"os"
-	"path/filepath"
 
+	"github.com/arjungandhi/money/pkg/config"
 	_ "modernc.org/sqlite"
 )
 
@@ -14,16 +13,17 @@ import (
 var schemaSQL string
 
 type DB struct {
-	conn *sql.DB
+	conn   *sql.DB
+	config *config.Config
 }
 
 func New() (*DB, error) {
-	moneyDir := getMoneyDir()
+	cfg := config.New()
 
-	if err := os.MkdirAll(moneyDir, 0755); err != nil {
+	if err := cfg.EnsureMoneyDir(); err != nil {
 		return nil, fmt.Errorf("failed to create money directory: %w", err)
 	}
-	dbPath := filepath.Join(moneyDir, "money.db")
+	dbPath := cfg.DBPath()
 	conn, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -34,7 +34,10 @@ func New() (*DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	db := &DB{conn: conn}
+	db := &DB{
+		conn:   conn,
+		config: cfg,
+	}
 
 	if err := db.runMigrations(); err != nil {
 		conn.Close()
@@ -488,12 +491,9 @@ func (db *DB) runIncrementalMigrations() error {
 	return nil
 }
 
-func getMoneyDir() string {
-	if dir := os.Getenv("MONEY_DIR"); dir != "" {
-		return dir
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".money")
+// GetConfig returns the database configuration
+func (db *DB) GetConfig() *config.Config {
+	return db.config
 }
 
 func (db *DB) SaveCredentials(accessURL, username, password string) error {

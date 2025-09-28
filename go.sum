@@ -71,6 +71,7 @@ github.com/rwxrob/term v0.2.8 h1:N9spr+owF8mRizSqPiATu5F0v2VJUIKwRldsibAUys8=
 github.com/rwxrob/term v0.2.8/go.mod h1:UruWGJ5mrQH5v1XBg52s7ldZUBXxEODevbkoFUM4SrQ=
 github.com/rwxrob/to v0.11.2 h1:kz1W9Pe78Og8U+gLi1Ozs0N7RB5HJt4q9dM9Uaup2XM=
 github.com/rwxrob/to v0.11.2/go.mod h1:8+uSoxMWfTSY/KU57db87hWGZGsiVW0uSDZd7NAgInI=
+github.com/sahilm/fuzzy v0.1.0 h1:FzWGaw2Opqyu+794ZQ9SYifWv2EIXpwP4q8dY1kDAwI=
 github.com/sahilm/fuzzy v0.1.0/go.mod h1:VFvziUEIMCrT6A6tw2RFIXPXXmzXbOsSHF0DOI8ZK9Y=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=

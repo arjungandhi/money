@@ -36,6 +36,7 @@ require (
 	github.com/rwxrob/structs v0.6.0 // indirect
 	github.com/rwxrob/term v0.2.8 // indirect
 	github.com/rwxrob/to v0.11.2 // indirect
+	github.com/sahilm/fuzzy v0.1.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/sys v0.34.0 // indirect

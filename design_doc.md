@@ -1,10 +1,21 @@
 # money design doc
 
 # Core User Commands
-- `money init`: initial setup command that prompts user for base64-encoded SimpleFIN setup token, exchanges it for Access URL, and stores credentials locally
-  - Accepts base64-encoded setup tokens (not direct URLs)
-  - No token validation - let SimpleFIN client handle errors
-  - Works with both production and beta SimpleFIN bridges
+- `money init`: Interactive setup tutorial for the money CLI that guides users through complete configuration
+  - Detects existing configurations and prompts for overwrites when applicable
+  - Configures data storage location (MONEY_DIR environment variable)
+  - Sets up SimpleFIN credentials for bank account access
+  - Configures RentCast API for property valuations (optional)
+  - Sets up LLM integration for transaction categorization (optional)
+  - Adds environment variables to shell configuration with user confirmation
+  - `money init simplefin [setup-token]`: Set up SimpleFIN credentials only
+    - Accepts base64-encoded setup tokens (not direct URLs)
+    - No token validation - let SimpleFIN client handle errors
+    - Works with both production and beta SimpleFIN bridges
+  - `money init rentcast [api-key]`: Set up RentCast API key only
+    - Configures RentCast API key for property valuations
+    - Basic validation of API key format
+    - Stores key securely in local database
 - `money fetch`: syncs latest data from SimpleFIN and stores it to the local database
    - Uses stored Access URL from `money init` to fetch account data via GET /accounts endpoint
    - Data synced includes accounts and transactions with full history
@@ -56,7 +67,7 @@
   - `money categories clear-internal <name>`: remove internal flag from a category
   - `money categories seed`: populate database with common default categories
 - `money property`: manage property accounts and valuations using RentCast API
-  - `money property config <api-key>`: configure RentCast API key for property valuations
+  - Use `money init rentcast` to configure RentCast API access
   - `money property add <name> <address> <city> <state> <zipcode> [latitude] [longitude]`: add a new property account
   - `money property list`: list all property accounts with their details and current values
   - `money property update <account-id>`: update valuation for a specific property using RentCast API
@@ -77,6 +88,21 @@ Key features:
 - Default seed categories include "Transfers" as an internal category
 - LLM categorization automatically handles both regular and internal categories in a unified approach
 - CLI commands allow setting/clearing the internal flag: `category set-internal` and `category clear-internal`
+
+# Configuration Management
+
+The money CLI uses environment variables for configuration, consolidated through a dedicated config package:
+
+- **MONEY_DIR**: Directory where money data is stored (defaults to `$HOME/.money`)
+- **LLM_PROMPT_CMD**: Command used for LLM integration (defaults to `claude`)
+- **LLM_BATCH_SIZE**: Batch size for LLM categorization (defaults to `10`)
+
+The config package (`pkg/config/config.go`) provides:
+- Centralized environment variable handling
+- Default value management
+- Configuration validation
+- Shell export generation for .bashrc integration
+- Database and LLM service integration
 
 # Tech Stack
 1. language: Go

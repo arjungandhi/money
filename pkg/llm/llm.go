@@ -4,25 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
+	"github.com/arjungandhi/money/pkg/config"
 	"github.com/arjungandhi/money/pkg/database"
 )
 
 type Client struct {
-	promptCommand string
+	config *config.Config
 }
 
 func NewClient() *Client {
-	promptCmd := os.Getenv("LLM_PROMPT_CMD")
-	if promptCmd == "" {
-		promptCmd = "claude"
-	}
-
 	return &Client{
-		promptCommand: promptCmd,
+		config: config.New(),
+	}
+}
+
+func NewClientWithConfig(cfg *config.Config) *Client {
+	return &Client{
+		config: cfg,
 	}
 }
 
@@ -70,7 +71,7 @@ func (c *Client) CategorizeTransactionsWithExamples(ctx context.Context, transac
 
 func (c *Client) runLLMCommand(ctx context.Context, prompt string) (string, error) {
 
-	parts := strings.Fields(c.promptCommand)
+	parts := strings.Fields(c.config.LLMPromptCmd)
 	if len(parts) == 0 {
 		return "", fmt.Errorf("empty prompt command")
 	}

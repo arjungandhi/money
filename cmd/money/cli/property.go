@@ -20,7 +20,6 @@ var Property = &Z.Cmd{
 	Summary: "Manage property accounts and valuations using RentCast API",
 	Commands: []*Z.Cmd{
 		help.Cmd,
-		PropertyConfig,
 		PropertyAdd,
 		PropertyList,
 		PropertyUpdate,
@@ -28,44 +27,21 @@ var Property = &Z.Cmd{
 		PropertySetValue,
 		PropertyDetails,
 	},
+	Description: `
+Manage property accounts and valuations using RentCast API.
+
+To configure RentCast API access, use: money init rentcast
+
+Commands:
+  add        - Add a new property account
+  list       - List all property accounts
+  update     - Update valuation for a specific property
+  update-all - Update valuations for all properties
+  set-value  - Manually set property value
+  details    - Show detailed property information
+`,
 }
 
-var PropertyConfig = &Z.Cmd{
-	Name:     "config",
-	Summary:  "Configure RentCast API key for property valuations",
-	Usage:    "<api-key>",
-	Commands: []*Z.Cmd{help.Cmd},
-	Call: func(cmd *Z.Cmd, args ...string) error {
-		if len(args) != 1 {
-			return fmt.Errorf("usage: %s <api-key>", cmd.Usage)
-		}
-
-		apiKey := args[0]
-
-		// Basic validation - RentCast API keys are typically alphanumeric
-		if len(apiKey) < 10 {
-			return fmt.Errorf("API key appears to be too short. Please check your RentCast API key")
-		}
-
-		db, err := database.New()
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		// Save the API key
-		err = db.SaveRentCastAPIKey(apiKey)
-		if err != nil {
-			return fmt.Errorf("failed to save RentCast API key: %w", err)
-		}
-
-		fmt.Println("Successfully saved RentCast API key!")
-		fmt.Println("You can now use 'money property update' and 'money property update-all' commands.")
-		fmt.Println("To get a RentCast API key, visit: https://developers.rentcast.io/")
-
-		return nil
-	},
-}
 
 var PropertyAdd = &Z.Cmd{
 	Name:    "add",
