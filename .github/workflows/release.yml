@@ -23,22 +23,24 @@ jobs:
     - name: Get dependencies
       run: go mod download
 
+    - name: Test
+      run: go test -v ./...
+
     - name: Build binary
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 0
         VERSION: ${{ github.ref_name }}
       run: |
         BINARY_NAME="money-${{ matrix.goos }}-${{ matrix.goarch }}"
-        go build -ldflags="-s -w -X 'github.com/arjungandhi/money/pkg/version.Version=$VERSION'" -o "${BINARY_NAME}" ./cmd/money
-        echo "ASSET=${BINARY_NAME}" >> $GITHUB_ENV
+        go build -v -ldflags="-s -w -X 'github.com/arjungandhi/money/pkg/version.Version=$VERSION'" -o "${BINARY_NAME}" ./cmd/money
 
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload to Release
+      uses: svenstaro/upload-release-action@v2
       with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./${{ env.ASSET }}
-        asset_name: ${{ env.ASSET }}
-        asset_content_type: application/octet-stream
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: money-${{ matrix.goos }}-${{ matrix.goarch }}
+        asset_name: money-${{ matrix.goos }}-${{ matrix.goarch }}
+        tag: ${{ github.ref }}
+        overwrite: true
