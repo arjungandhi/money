@@ -572,9 +572,24 @@ func autoCategorizeTransactions() error {
 		return nil
 	}
 
+	// Step 2: Get examples from previously categorized transactions
+	categorizedExamples, err := db.GetCategorizedExamples(10) // Get up to 10 examples
+	if err != nil {
+		return fmt.Errorf("failed to get categorized examples: %w", err)
+	}
+
+	examples, err := convert.ToCategorizedExamples(categorizedExamples, db)
+	if err != nil {
+		return fmt.Errorf("failed to convert categorized examples: %w", err)
+	}
+
+	if len(examples) > 0 {
+		fmt.Printf("📚 Using %d examples from previously categorized transactions\n", len(examples))
+	}
+
 	// Step 2: Categorize remaining transactions using user's existing categories
 	fmt.Printf("📝 Step 2: Categorizing %d remaining transactions using your existing categories...\n", len(llmTransactions))
-	categoryResult, err := llmClient.CategorizeTransactions(ctx, llmTransactions, categoryNames)
+	categoryResult, err := llmClient.CategorizeTransactionsWithExamples(ctx, llmTransactions, categoryNames, examples)
 	if err != nil {
 		return fmt.Errorf("failed to categorize transactions: %w", err)
 	}
@@ -757,7 +772,8 @@ func recategorizeAllTransactions() error {
 	llmTransactions = convert.ToLLMTransactionData(nonTransferTransactions)
 
 	fmt.Printf("Categorizing %d non-transfer transactions...\n", len(llmTransactions))
-	categoryResult, err := llmClient.CategorizeTransactions(ctx, llmTransactions, categoryNames)
+	// Note: No examples available since we cleared all categories for --all mode
+	categoryResult, err := llmClient.CategorizeTransactionsWithExamples(ctx, llmTransactions, categoryNames, nil)
 	if err != nil {
 		return fmt.Errorf("failed to categorize transactions: %w", err)
 	}

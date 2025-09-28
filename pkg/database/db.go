@@ -1573,3 +1573,38 @@ type Property struct {
 	LastRentEstimate  *int
 	LastUpdated       *string
 }
+
+// GetCategorizedExamples returns a sample of categorized transactions for use as examples
+func (db *DB) GetCategorizedExamples(limit int) ([]Transaction, error) {
+	query := `
+		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
+		       COALESCE(t.is_transfer, FALSE), t.category_id
+		FROM transactions t
+		WHERE t.category_id IS NOT NULL AND COALESCE(t.is_transfer, FALSE) = FALSE
+		ORDER BY t.posted DESC
+		LIMIT ?`
+
+	rows, err := db.conn.Query(query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query categorized examples: %w", err)
+	}
+	defer rows.Close()
+
+	var transactions []Transaction
+	for rows.Next() {
+		var t Transaction
+		var categoryID *int
+		err := rows.Scan(&t.ID, &t.AccountID, &t.Posted, &t.Amount, &t.Description, &t.Pending, &t.IsTransfer, &categoryID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan categorized example: %w", err)
+		}
+		t.CategoryID = categoryID
+		transactions = append(transactions, t)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate categorized examples: %w", err)
+	}
+
+	return transactions, nil
+}

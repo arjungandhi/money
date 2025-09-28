@@ -42,3 +42,28 @@ func ToLLMAccountData(accounts []database.Account) []llm.AccountData {
 	}
 	return llmAccounts
 }
+
+// ToCategorizedExamples converts database transactions with categories to LLM examples
+func ToCategorizedExamples(transactions []database.Transaction, db *database.DB) ([]llm.CategorizedExample, error) {
+	examples := make([]llm.CategorizedExample, 0, len(transactions))
+
+	for _, tx := range transactions {
+		if tx.CategoryID == nil {
+			continue // Skip uncategorized transactions
+		}
+
+		// Get category name
+		category, err := db.GetCategoryByID(*tx.CategoryID)
+		if err != nil {
+			continue // Skip if category not found
+		}
+
+		examples = append(examples, llm.CategorizedExample{
+			Description: tx.Description,
+			Amount:      tx.Amount,
+			Category:    category.Name,
+		})
+	}
+
+	return examples, nil
+}

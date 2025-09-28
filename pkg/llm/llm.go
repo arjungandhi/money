@@ -70,7 +70,11 @@ func (c *Client) IdentifyTransfers(ctx context.Context, transactions []Transacti
 }
 
 func (c *Client) CategorizeTransactions(ctx context.Context, transactions []TransactionData, categories []string) (*CategoryAnalysisResult, error) {
-	prompt := buildCategorizationPrompt(transactions, categories)
+	return c.CategorizeTransactionsWithExamples(ctx, transactions, categories, nil)
+}
+
+func (c *Client) CategorizeTransactionsWithExamples(ctx context.Context, transactions []TransactionData, categories []string, examples []CategorizedExample) (*CategoryAnalysisResult, error) {
+	prompt := buildCategorizationPrompt(transactions, categories, examples)
 
 	response, err := c.runLLMCommand(ctx, prompt)
 	if err != nil {
@@ -127,6 +131,13 @@ type TransactionData struct {
 	Amount      int    `json:"amount"`
 	Description string `json:"description"`
 	Pending     bool   `json:"pending"`
+}
+
+// CategorizedExample represents an example of a previously categorized transaction
+type CategorizedExample struct {
+	Description string `json:"description"`
+	Amount      int    `json:"amount"`
+	Category    string `json:"category"`
 }
 
 // AccountData represents account data for LLM processing
@@ -213,7 +224,7 @@ Return ONLY the raw JSON object with no markdown formatting:`)
 }
 
 // buildCategorizationPrompt creates a prompt for categorizing transactions
-func buildCategorizationPrompt(transactions []TransactionData, categories []string) string {
+func buildCategorizationPrompt(transactions []TransactionData, categories []string, examples []CategorizedExample) string {
 	var prompt strings.Builder
 
 	prompt.WriteString(`You are a financial transaction categorizer. Your task is to categorize transactions using ONLY the provided categories.
@@ -228,6 +239,18 @@ AVAILABLE CATEGORIES:
 `)
 	for _, category := range categories {
 		prompt.WriteString(fmt.Sprintf("- %s\n", category))
+	}
+
+	// Add examples section if provided
+	if len(examples) > 0 {
+		prompt.WriteString("\nCATEGORIZATION EXAMPLES:\n")
+		prompt.WriteString("Here are examples of how similar transactions have been categorized:\n\n")
+		for _, example := range examples {
+			amountDollars := float64(example.Amount) / 100.0
+			prompt.WriteString(fmt.Sprintf("- Description: \"%s\", Amount: $%.2f → Category: \"%s\"\n",
+				example.Description, amountDollars, example.Category))
+		}
+		prompt.WriteString("\nUse these examples to guide your categorization decisions.\n")
 	}
 
 	prompt.WriteString("\nTRANSACTIONS TO CATEGORIZE:\n")
