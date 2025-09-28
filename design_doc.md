@@ -47,13 +47,13 @@
         - `money transactions categorize modify <transaction-id> <category-name>`: manually set or change the category of a specific transaction
         - `money transactions categorize clear <transaction-id>`: clear the category of a specific transaction (set to uncategorized)
         - `money transactions categorize recategorize`: re-run categorization on all previously categorized transactions
-- `money transactions category`: manage transaction categories
-  - `money transactions category list`: show all existing categories with their internal status
-  - `money transactions category add <name> [--internal]`: add a new category, optionally marking it as internal
-  - `money transactions category remove <name>`: remove a category (only if not used by any transactions)
-  - `money transactions category set-internal <name>`: mark a category as internal (excludes from budget calculations)
-  - `money transactions category clear-internal <name>`: remove internal flag from a category
-  - `money transactions category seed`: populate database with common default categories
+- `money categories`: manage transaction categories
+  - `money categories list`: show all existing categories with their internal status
+  - `money categories add <name> [--internal]`: add a new category, optionally marking it as internal
+  - `money categories remove <name>`: remove a category (only if not used by any transactions)
+  - `money categories set-internal <name>`: mark a category as internal (excludes from budget calculations)
+  - `money categories clear-internal <name>`: remove internal flag from a category
+  - `money categories seed`: populate database with common default categories
 - `money property`: manage property accounts and valuations using RentCast API
   - `money property config <api-key>`: configure RentCast API key for property valuations
   - `money property add <name> <address> <city> <state> <zipcode> [latitude] [longitude]`: add a new property account
