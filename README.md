@@ -75,6 +75,8 @@ money balance
 - `money accounts` - Manage account types and nicknames
 - `money categories` - Manage transaction categories
 - `money property` - Track real estate values and manage properties
+- `money version` - Display the current version of the money CLI
+- `money update` - Update the money CLI to the latest version from GitHub releases
 
 # Design Doc
 The design doc can be found [here](docs/design.md).

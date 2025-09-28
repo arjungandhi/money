@@ -73,6 +73,8 @@
   - `money property update <account-id>`: update valuation for a specific property using RentCast API
   - `money property update-all`: update valuations for all property accounts using RentCast API
   - `money property details <account-id>`: show detailed information for a specific property
+- `money version`: display the current version of the money CLI
+- `money update`: automatically update the money CLI to the latest version from GitHub releases
 
 # Internal Categories
 

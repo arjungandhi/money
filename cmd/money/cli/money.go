@@ -3,8 +3,6 @@ package cli
 import (
 	Z "github.com/rwxrob/bonzai/z"
 	"github.com/rwxrob/help"
-	"github.com/arjungandhi/money/pkg/version"
-	"github.com/arjungandhi/money/pkg/update"
 )
 
 var Cmd = &Z.Cmd{
@@ -12,8 +10,8 @@ var Cmd = &Z.Cmd{
 	Summary: "Personal finance management CLI",
 	Commands: []*Z.Cmd{
 		help.Cmd,
-		version.Cmd,
-		update.Cmd,
+		Version,
+		Update,
 		Init,
 		Fetch,
 		Balance,
