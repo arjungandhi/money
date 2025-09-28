@@ -496,15 +496,12 @@ func getMoneyDir() string {
 	return filepath.Join(home, ".money")
 }
 
-// Credential methods
 func (db *DB) SaveCredentials(accessURL, username, password string) error {
-	// Delete any existing credentials (only one set allowed)
 	_, err := db.conn.Exec("DELETE FROM credentials")
 	if err != nil {
 		return fmt.Errorf("failed to clear existing credentials: %w", err)
 	}
 
-	// Insert new credentials
 	_, err = db.conn.Exec(`
 		INSERT INTO credentials (access_url, username, password, last_used) 
 		VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
@@ -532,22 +529,18 @@ func (db *DB) GetCredentials() (accessURL, username, password string, err error)
 	// Update last_used timestamp
 	_, updateErr := db.conn.Exec("UPDATE credentials SET last_used = CURRENT_TIMESTAMP WHERE access_url = ?", accessURL)
 	if updateErr != nil {
-		// Log warning but don't fail the operation
 		fmt.Printf("Warning: failed to update last_used timestamp: %v\n", updateErr)
 	}
 
 	return accessURL, username, password, nil
 }
 
-// RentCast credential methods
 func (db *DB) SaveRentCastAPIKey(apiKey string) error {
-	// Delete any existing API key (only one set allowed)
 	_, err := db.conn.Exec("DELETE FROM rentcast_credentials")
 	if err != nil {
 		return fmt.Errorf("failed to clear existing RentCast API key: %w", err)
 	}
 
-	// Insert new API key
 	_, err = db.conn.Exec(`
 		INSERT INTO rentcast_credentials (api_key, last_used)
 		VALUES (?, CURRENT_TIMESTAMP)`,
@@ -576,7 +569,6 @@ func (db *DB) GetRentCastAPIKey() (string, error) {
 	// Update last_used timestamp
 	_, updateErr := db.conn.Exec("UPDATE rentcast_credentials SET last_used = CURRENT_TIMESTAMP WHERE api_key = ?", apiKey)
 	if updateErr != nil {
-		// Log warning but don't fail the operation
 		fmt.Printf("Warning: failed to update last_used timestamp: %v\n", updateErr)
 	}
 
@@ -601,7 +593,6 @@ func (db *DB) HasCredentials() (bool, error) {
 	return count > 0, nil
 }
 
-// Organization methods
 func (db *DB) SaveOrganization(id, name, url string) error {
 	// Use INSERT OR REPLACE to handle both new and existing organizations
 	_, err := db.conn.Exec(`
@@ -650,7 +641,6 @@ func (db *DB) GetOrganizations() ([]Organization, error) {
 	return orgs, nil
 }
 
-// Account methods
 func (db *DB) SaveAccount(id, orgID, name, currency string, balance int, availableBalance *int, balanceDate string) error {
 	// Use INSERT OR REPLACE to handle both new and existing accounts
 	// Update the updated_at timestamp for existing accounts
@@ -742,7 +732,6 @@ func (db *DB) GetAccounts() ([]Account, error) {
 	return accounts, nil
 }
 
-// UpdateAccountBalance updates only the balance for an existing account
 func (db *DB) UpdateAccountBalance(accountID string, balance int) error {
 	_, err := db.conn.Exec(`
 		UPDATE accounts
@@ -755,7 +744,6 @@ func (db *DB) UpdateAccountBalance(accountID string, balance int) error {
 	return nil
 }
 
-// Account type methods
 func (db *DB) SetAccountType(accountID, accountType string) error {
 	// Validate account type
 	validTypes := []string{"checking", "savings", "credit", "investment", "loan", "property", "other"}
@@ -793,7 +781,6 @@ func (db *DB) ClearAccountType(accountID string) error {
 	return nil
 }
 
-// Account nickname methods
 func (db *DB) SetAccountNickname(accountID, nickname string) error {
 	_, err := db.conn.Exec(`
 		UPDATE accounts
@@ -916,7 +903,6 @@ func (db *DB) DeleteAccount(accountID string) error {
 	return nil
 }
 
-// Transaction methods
 func (db *DB) SaveTransaction(id, accountID, posted string, amount int, description string, pending bool) error {
 	// Use INSERT OR IGNORE to avoid duplicate transactions
 	// If the transaction already exists, we don't update it to preserve any manual categorization
@@ -1071,7 +1057,6 @@ func (db *DB) ClearTransactionCategory(transactionID string) error {
 	return nil
 }
 
-// TransactionExists checks if a transaction with the given ID already exists
 func (db *DB) TransactionExists(id string) (bool, error) {
 	var count int
 	err := db.conn.QueryRow("SELECT COUNT(*) FROM transactions WHERE id = ?", id).Scan(&count)
@@ -1081,7 +1066,6 @@ func (db *DB) TransactionExists(id string) (bool, error) {
 	return count > 0, nil
 }
 
-// Category methods
 func (db *DB) SaveCategory(name string) (int, error) {
 	return db.SaveCategoryWithInternal(name, false)
 }
@@ -1275,7 +1259,6 @@ func (db *DB) SetCategoryInternalByName(categoryName string, isInternal bool) er
 	return nil
 }
 
-// Balance History methods
 func (db *DB) SaveBalanceHistory(accountID string, balance int, availableBalance *int) error {
 	var availableBalanceVal sql.NullInt64
 	if availableBalance != nil {
@@ -1368,7 +1351,6 @@ func (db *DB) GetAllBalanceHistory(days int) ([]BalanceHistory, error) {
 	return history, nil
 }
 
-// GetTransactionsByCategory gets transactions grouped by category for costs/income analysis
 func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeInternal bool) (map[string][]Transaction, error) {
 	var query string
 	var args []interface{}
@@ -1464,7 +1446,6 @@ func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeIntern
 	return categoryTransactions, nil
 }
 
-// Property methods
 func (db *DB) SaveProperty(accountID, address, city, state, zipCode string, propertyType *string, latitude, longitude *float64) error {
 	var latVal, lonVal sql.NullFloat64
 	var propTypeVal sql.NullString
@@ -1679,7 +1660,6 @@ type Property struct {
 	LastUpdated       *string
 }
 
-// GetCategorizedExamples returns a sample of categorized transactions for use as examples
 func (db *DB) GetCategorizedExamples(limit int) ([]Transaction, error) {
 	query := `
 		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id

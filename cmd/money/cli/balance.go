@@ -2,11 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/guptarohit/asciigraph"
@@ -17,6 +15,7 @@ import (
 	"github.com/arjungandhi/money/pkg/database"
 	"github.com/arjungandhi/money/pkg/format"
 	"github.com/arjungandhi/money/pkg/property"
+	"github.com/arjungandhi/money/pkg/table"
 )
 
 var Balance = &Z.Cmd{
@@ -94,13 +93,12 @@ var Balance = &Z.Cmd{
 			fmt.Printf("Warning: could not generate balance trend graph: %v\n", err)
 		}
 
-		// Show properly aligned current balances table
-		fmt.Println("\n💰 Account Balances")
-		fmt.Println(strings.Repeat("─", 50))
+		// Create account balances table
+		config := table.DefaultConfig()
+		config.Title = "💰 Account Balances"
+		config.MaxColumnWidth = 30
 
-		// Create tabwriter for proper alignment
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "Account\tInstitution\tBalance\n")
+		balancesTable := table.NewWithConfig(config, "Account", "Institution", "Balance")
 
 		// Initialize property service for property account details
 		propertyService := property.NewService(db)
@@ -127,27 +125,21 @@ var Balance = &Z.Cmd{
 				if propertyDetails, err := propertyService.GetPropertyDetails(account.ID); err == nil {
 					institutionName = "Property"
 					displayName = fmt.Sprintf("%s, %s", propertyDetails.Address, propertyDetails.City)
-					displayName = truncateString(displayName, 25)
 				}
 			}
 
-			// Truncate institution name if too long
-			institutionName = truncateString(institutionName, 15)
-
-			fmt.Fprintf(w, "%s %s\t%s\t%s\n",
-				typeIcon, displayName, institutionName, balanceStr)
+			accountDisplayName := fmt.Sprintf("%s %s", typeIcon, displayName)
+			balancesTable.AddRow(accountDisplayName, institutionName, balanceStr)
 			totalNetWorth += int64(account.Balance)
 		}
 
-		w.Flush()
+		if err := balancesTable.Render(); err != nil {
+			return fmt.Errorf("failed to render balances table: %w", err)
+		}
 
 		// Show totals by account type
 		fmt.Println("\n📊 Summary by Type")
 		fmt.Println(strings.Repeat("─", 50))
-
-		// Create tabwriter for totals table
-		wTotals := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(wTotals, "Type\tTotal\tAccounts\n")
 
 		// Calculate totals by account type
 		accountTypeTotals := make(map[string]int64)
@@ -162,6 +154,9 @@ var Balance = &Z.Cmd{
 			accountTypeCounts[accountType]++
 		}
 
+		// Create summary table
+		summaryTable := table.New("Type", "Total", "Accounts")
+
 		// Display totals in the same order as main table
 		for _, accountType := range typeOrder {
 			if total, exists := accountTypeTotals[accountType]; exists {
@@ -173,12 +168,13 @@ var Balance = &Z.Cmd{
 				accountTypeName := strings.Title(accountType)
 				displayName := fmt.Sprintf("%s %s", typeIcon, accountTypeName)
 
-				fmt.Fprintf(wTotals, "%s\t%s\t%d\n",
-					displayName, totalStr, count)
+				summaryTable.AddRow(displayName, totalStr, fmt.Sprintf("%d", count))
 			}
 		}
 
-		wTotals.Flush()
+		if err := summaryTable.Render(); err != nil {
+			return fmt.Errorf("failed to render summary table: %w", err)
+		}
 
 		return nil
 		})

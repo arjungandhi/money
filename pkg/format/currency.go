@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// Currency converts cents to dollars and formats with currency symbol and thousands separators
 func Currency(cents int, currency string) string {
 	symbol := currencySymbol(currency)
 	var wholePart int64
@@ -27,12 +26,10 @@ func Currency(cents int, currency string) string {
 	}
 }
 
-// WithCommas adds thousands separators to a number
 func WithCommas(n int64) string {
 	return withCommas(n)
 }
 
-// withCommas adds thousands separators to a number
 func withCommas(n int64) string {
 	if n == 0 {
 		return "0"
@@ -51,7 +48,6 @@ func withCommas(n int64) string {
 	return strings.Join(parts, ",")
 }
 
-// currencySymbol returns the appropriate symbol for the currency
 func currencySymbol(currency string) string {
 	switch strings.ToUpper(currency) {
 	case "USD":

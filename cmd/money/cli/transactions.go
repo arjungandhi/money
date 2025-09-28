@@ -13,6 +13,7 @@ import (
 	"github.com/arjungandhi/money/internal/convert"
 	"github.com/arjungandhi/money/pkg/database"
 	"github.com/arjungandhi/money/pkg/llm"
+	"github.com/arjungandhi/money/pkg/table"
 )
 
 var (
@@ -138,24 +139,26 @@ var TransactionsList = &Z.Cmd{
 			accountMap[account.ID] = account.DisplayName()
 		}
 
-		// Display transactions
-		fmt.Printf("Found %d transactions:\n\n", len(transactions))
-		fmt.Printf("%-20s %-15s %-12s %-50s %s\n", "Date", "Account", "Amount", "Description", "Category")
-		fmt.Println(strings.Repeat("-", 120))
+		// Create and populate transactions table
+		config := table.DefaultConfig()
+		config.Title = fmt.Sprintf("Found %d transactions", len(transactions))
+		config.MaxColumnWidth = 50
 
-		for _, t := range transactions {
+		t := table.NewWithConfig(config, "Date", "Account", "Amount", "Description", "Category")
+
+		for _, txn := range transactions {
 			// Parse date for display
-			postedTime, _ := time.Parse(time.RFC3339, t.Posted)
+			postedTime, _ := time.Parse(time.RFC3339, txn.Posted)
 			dateStr := postedTime.Format("2006-01-02 15:04")
 
 			// Format amount (convert cents to dollars)
-			amountStr := fmt.Sprintf("$%.2f", float64(t.Amount)/100.0)
-			coloredAmount := colorizeAmount(t.Amount, amountStr, 12)
+			amountStr := fmt.Sprintf("$%.2f", float64(txn.Amount)/100.0)
+			coloredAmount := colorizeAmount(txn.Amount, amountStr, 12)
 
 			// Get category name if categorized
 			categoryStr := "Uncategorized"
-			if t.CategoryID != nil {
-				category, err := db.GetCategoryByID(*t.CategoryID)
+			if txn.CategoryID != nil {
+				category, err := db.GetCategoryByID(*txn.CategoryID)
 				if err == nil {
 					categoryStr = category.Name
 					if category.IsInternal {
@@ -164,27 +167,20 @@ var TransactionsList = &Z.Cmd{
 				}
 			}
 
-			// Truncate description if too long
-			description := t.Description
-			if len(description) > 47 {
-				description = description[:47] + "..."
-			}
-
 			// Get account name for display
-			accountDisplay := t.AccountID // fallback to ID if name not found
-			if accountName, exists := accountMap[t.AccountID]; exists {
+			accountDisplay := txn.AccountID // fallback to ID if name not found
+			if accountName, exists := accountMap[txn.AccountID]; exists {
 				accountDisplay = accountName
-			}
-			// Truncate account name if too long
-			if len(accountDisplay) > 13 {
-				accountDisplay = accountDisplay[:10] + "..."
 			}
 
 			// Apply color to category
 			coloredCategory := colorizeCategory(categoryStr)
 
-			fmt.Printf("%-20s %-15s %s %-50s %s\n",
-				dateStr, accountDisplay, coloredAmount, description, coloredCategory)
+			t.AddRow(dateStr, accountDisplay, coloredAmount, txn.Description, coloredCategory)
+		}
+
+		if err := t.Render(); err != nil {
+			return fmt.Errorf("failed to render transactions table: %w", err)
 		}
 
 		return nil

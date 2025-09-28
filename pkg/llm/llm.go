@@ -12,12 +12,10 @@ import (
 	"github.com/arjungandhi/money/pkg/database"
 )
 
-// Client handles LLM interactions using configurable external commands
 type Client struct {
 	promptCommand string
 }
 
-// NewClient creates a new LLM client with the configured command
 func NewClient() *Client {
 	promptCmd := os.Getenv("LLM_PROMPT_CMD")
 	if promptCmd == "" {
@@ -72,7 +70,6 @@ func (c *Client) IdentifyTransfers(ctx context.Context, transactions []Transacti
 }
 
 func (c *Client) CategorizeTransactions(ctx context.Context, transactions []TransactionData, categories []string) (*CategoryAnalysisResult, error) {
-	// Convert string categories to database.Category structs (all as regular categories)
 	categoryStructs := make([]database.Category, len(categories))
 	for i, cat := range categories {
 		categoryStructs[i] = database.Category{
@@ -100,11 +97,8 @@ func (c *Client) CategorizeTransactionsWithExamples(ctx context.Context, transac
 	return &result, nil
 }
 
-// runLLMCommand executes the configured LLM command with the given prompt
 func (c *Client) runLLMCommand(ctx context.Context, prompt string) (string, error) {
-	// No timeout - let LLM take as long as needed
 
-	// Split command and arguments
 	parts := strings.Fields(c.promptCommand)
 	if len(parts) == 0 {
 		return "", fmt.Errorf("empty prompt command")
@@ -112,19 +106,16 @@ func (c *Client) runLLMCommand(ctx context.Context, prompt string) (string, erro
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 
-	// Set up stdin pipe to send the prompt
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
 
-	// Write prompt to stdin in a goroutine
 	go func() {
 		defer stdin.Close()
 		stdin.Write([]byte(prompt))
 	}()
 
-	// Execute the command and get output
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to execute LLM command: %w", err)
@@ -158,7 +149,6 @@ type AccountData struct {
 	AccountType string `json:"account_type,omitempty"`
 }
 
-// buildTransferIdentificationPrompt creates a prompt for identifying inter-account transfers
 func buildTransferIdentificationPrompt(transactions []TransactionData, accounts []AccountData) string {
 	var prompt strings.Builder
 
@@ -233,7 +223,6 @@ Return ONLY the raw JSON object with no markdown formatting:`)
 	return prompt.String()
 }
 
-// buildCategorizationPrompt creates a prompt for categorizing transactions
 func buildCategorizationPrompt(transactions []TransactionData, categories []database.Category, accounts []AccountData, examples []CategorizedExample) string {
 	var prompt strings.Builder
 
@@ -248,7 +237,6 @@ CATEGORIZATION RULES:
 
 `)
 
-	// Separate regular and internal categories
 	var regularCategories []string
 	var internalCategories []string
 	for _, category := range categories {
@@ -259,7 +247,6 @@ CATEGORIZATION RULES:
 		}
 	}
 
-	// Display categories with clear labeling
 	if len(regularCategories) > 0 {
 		prompt.WriteString("REGULAR CATEGORIES (for income/expenses):\n")
 		for _, category := range regularCategories {
@@ -276,7 +263,6 @@ CATEGORIZATION RULES:
 		prompt.WriteString("\n")
 	}
 
-	// Add account information for transfer detection
 	if len(accounts) > 0 {
 		prompt.WriteString("YOUR ACCOUNTS:\n")
 		for _, account := range accounts {
@@ -289,7 +275,6 @@ CATEGORIZATION RULES:
 		prompt.WriteString("\n")
 	}
 
-	// Add examples section if provided
 	if len(examples) > 0 {
 		prompt.WriteString("\nCATEGORIZATION EXAMPLES:\n")
 		prompt.WriteString("Here are examples of how similar transactions have been categorized:\n\n")
@@ -357,7 +342,6 @@ Return ONLY the raw JSON object with no markdown formatting:`)
 	return prompt.String()
 }
 
-// PromptForApproval interactively asks user to approve suggestions
 func PromptForApproval(message string) (bool, error) {
 	fmt.Print(message + " (y/N): ")
 	scanner := bufio.NewScanner(os.Stdin)

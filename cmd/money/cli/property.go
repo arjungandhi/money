@@ -11,6 +11,7 @@ import (
 	"github.com/arjungandhi/money/pkg/database"
 	"github.com/arjungandhi/money/pkg/format"
 	"github.com/arjungandhi/money/pkg/property"
+	"github.com/arjungandhi/money/pkg/table"
 )
 
 var Property = &Z.Cmd{
@@ -193,10 +194,11 @@ var PropertyList = &Z.Cmd{
 			return nil
 		}
 
-		fmt.Println("Property Accounts")
-		fmt.Println(strings.Repeat("=", 80))
-		fmt.Printf("%-15s %-30s %-15s %-15s\n", "Account ID", "Address", "Value", "Last Updated")
-		fmt.Println(strings.Repeat("-", 80))
+		config := table.DefaultConfig()
+		config.Title = "Property Accounts"
+		config.MaxColumnWidth = 30
+
+		t := table.NewWithConfig(config, "Account ID", "Address", "Value", "Last Updated")
 
 		for _, prop := range properties {
 			// Get account details for the current balance
@@ -206,9 +208,6 @@ var PropertyList = &Z.Cmd{
 			}
 
 			address := fmt.Sprintf("%s, %s", prop.Address, prop.City)
-			if len(address) > 30 {
-				address = address[:27] + "..."
-			}
 
 			valueStr := "N/A"
 			if account.Balance > 0 {
@@ -218,17 +217,13 @@ var PropertyList = &Z.Cmd{
 			lastUpdated := "Never"
 			if prop.LastUpdated != nil {
 				lastUpdated = *prop.LastUpdated
-				if len(lastUpdated) > 15 {
-					lastUpdated = lastUpdated[:15]
-				}
 			}
 
-			accountIDStr := prop.AccountID
-			if len(accountIDStr) > 15 {
-				accountIDStr = accountIDStr[:12] + "..."
-			}
+			t.AddRow(prop.AccountID, address, valueStr, lastUpdated)
+		}
 
-			fmt.Printf("%-15s %-30s %-15s %-15s\n", accountIDStr, address, valueStr, lastUpdated)
+		if err := t.Render(); err != nil {
+			return fmt.Errorf("failed to render property table: %w", err)
 		}
 
 		return nil

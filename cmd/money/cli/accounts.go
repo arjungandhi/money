@@ -9,6 +9,7 @@ import (
 
 	"github.com/arjungandhi/money/internal/dbutil"
 	"github.com/arjungandhi/money/pkg/database"
+	"github.com/arjungandhi/money/pkg/table"
 )
 
 var Accounts = &Z.Cmd{
@@ -72,11 +73,12 @@ var AccountsList = &Z.Cmd{
 			orgMap[org.ID] = org
 		}
 
-		// Display accounts with types
-		fmt.Println("Account Types")
-		fmt.Println(strings.Repeat("=", 80))
-		fmt.Printf("%-12s %-25s %-30s %s\n", "Type", "Organization", "Account Name", "Account ID")
-		fmt.Println(strings.Repeat("-", 80))
+		// Create table for account types
+		config := table.DefaultConfig()
+		config.Title = "Account Types"
+		config.MaxColumnWidth = 30
+
+		t := table.NewWithConfig(config, "Type", "Organization", "Account Name", "Account ID")
 
 		for _, account := range accounts {
 			accountType := "unset"
@@ -92,18 +94,12 @@ var AccountsList = &Z.Cmd{
 			// Use DisplayName method to get nickname or original name
 			displayName := account.DisplayName()
 
-			// Truncate long names for better display
-			if len(orgName) > 25 {
-				orgName = orgName[:22] + "..."
-			}
-			if len(displayName) > 30 {
-				displayName = displayName[:27] + "..."
-			}
-
-			fmt.Printf("%-12s %-25s %-30s %s\n", accountType, orgName, displayName, account.ID)
+			t.AddRow(accountType, orgName, displayName, account.ID)
 		}
 
-		fmt.Println()
+		if err := t.Render(); err != nil {
+			return fmt.Errorf("failed to render accounts table: %w", err)
+		}
 		fmt.Println("Available account types: checking, savings, credit, investment, loan, property, other")
 		fmt.Println("Use 'money accounts type set <account-id> <type>' to set an account type")
 

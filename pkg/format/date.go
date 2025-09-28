@@ -2,7 +2,6 @@ package format
 
 import "time"
 
-// DateRange parses command line arguments for date range with --start, --end, and --month flags
 func DateRange(args []string) (startDate, endDate string) {
 	now := time.Now()
 	for i, arg := range args {
@@ -31,7 +30,6 @@ func DateRange(args []string) (startDate, endDate string) {
 	return startDate, endDate
 }
 
-// DateForDisplay formats a date string for user-friendly display
 func DateForDisplay(dateStr string) string {
 	if dateStr == "" {
 		return ""

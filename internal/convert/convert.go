@@ -5,7 +5,6 @@ import (
 	"github.com/arjungandhi/money/pkg/llm"
 )
 
-// ToLLMTransactionData converts database transactions to LLM transaction format
 func ToLLMTransactionData(transactions []database.Transaction) []llm.TransactionData {
 	llmTransactions := make([]llm.TransactionData, len(transactions))
 	for i, tx := range transactions {
@@ -21,7 +20,6 @@ func ToLLMTransactionData(transactions []database.Transaction) []llm.Transaction
 	return llmTransactions
 }
 
-// ToLLMAccountData converts database accounts to LLM account format
 func ToLLMAccountData(accounts []database.Account) []llm.AccountData {
 	llmAccounts := make([]llm.AccountData, len(accounts))
 	for i, acc := range accounts {
@@ -43,19 +41,18 @@ func ToLLMAccountData(accounts []database.Account) []llm.AccountData {
 	return llmAccounts
 }
 
-// ToCategorizedExamples converts database transactions with categories to LLM examples
 func ToCategorizedExamples(transactions []database.Transaction, db *database.DB) ([]llm.CategorizedExample, error) {
 	examples := make([]llm.CategorizedExample, 0, len(transactions))
 
 	for _, tx := range transactions {
 		if tx.CategoryID == nil {
-			continue // Skip uncategorized transactions
+			continue
 		}
 
 		// Get category name
 		category, err := db.GetCategoryByID(*tx.CategoryID)
 		if err != nil {
-			continue // Skip if category not found
+			continue
 		}
 
 		examples = append(examples, llm.CategorizedExample{
