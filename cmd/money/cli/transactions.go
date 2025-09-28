@@ -23,11 +23,11 @@ var (
 
 // colorizeCategory returns a colorized version of the category name
 func colorizeCategory(category string) string {
-	if category == "Transfer" {
-		return grayColor.Sprint(category)
-	}
 	if category == "Uncategorized" {
 		return redColor.Sprint(category)
+	}
+	if strings.Contains(category, "(internal)") {
+		return grayColor.Sprint(category)
 	}
 
 	// All other categories are uncolored
@@ -155,12 +155,13 @@ var TransactionsList = &Z.Cmd{
 
 			// Get category name if categorized
 			categoryStr := "Uncategorized"
-			if t.IsTransfer {
-				categoryStr = "Transfer"
-			} else if t.CategoryID != nil {
+			if t.CategoryID != nil {
 				category, err := db.GetCategoryByID(*t.CategoryID)
 				if err == nil {
 					categoryStr = category.Name
+					if category.IsInternal {
+						categoryStr += " (internal)"
+					}
 				}
 			}
 
@@ -199,7 +200,6 @@ var Categorize = &Z.Cmd{
 		help.Cmd,
 		CategorizeModify,
 		CategorizeClear,
-		CategorizeTransfer,
 		CategorizeAuto,
 		CategorizeManual,
 	},
@@ -287,33 +287,6 @@ var CategorizeClear = &Z.Cmd{
 	},
 }
 
-var CategorizeTransfer = &Z.Cmd{
-	Name:     "transfer",
-	Summary:  "Mark transaction as a transfer (excludes from income/expense calculations)",
-	Usage:    "transfer <transaction-id>",
-	Commands: []*Z.Cmd{help.Cmd},
-	Call: func(cmd *Z.Cmd, args ...string) error {
-		if len(args) != 1 {
-			return fmt.Errorf("usage: money transactions categorize transfer <transaction-id>")
-		}
-
-		transactionID := args[0]
-
-		db, err := database.New()
-		if err != nil {
-			return fmt.Errorf("failed to initialize database: %w", err)
-		}
-		defer db.Close()
-
-		err = db.MarkTransactionAsTransfer(transactionID)
-		if err != nil {
-			return fmt.Errorf("failed to mark transaction as transfer: %w", err)
-		}
-
-		fmt.Printf("Transaction %s marked as transfer\n", transactionID)
-		return nil
-	},
-}
 
 var CategorizeAuto = &Z.Cmd{
 	Name:     "auto",
@@ -345,13 +318,15 @@ var Category = &Z.Cmd{
 		CategoryList,
 		CategoryAdd,
 		CategoryRemove,
+		CategorySetInternal,
+		CategoryClearInternal,
 		CategorySeed,
 	},
 }
 
 var CategoryList = &Z.Cmd{
 	Name:     "list",
-	Summary:  "Show all existing categories",
+	Summary:  "Show all existing categories with their internal status",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		db, err := database.New()
@@ -370,8 +345,14 @@ var CategoryList = &Z.Cmd{
 			return nil
 		}
 
+		fmt.Printf("%-30s %s\n", "Category", "Internal")
+		fmt.Printf("%-30s %s\n", "--------", "--------")
 		for _, c := range categories {
-			fmt.Println(c.Name)
+			internal := "No"
+			if c.IsInternal {
+				internal = "Yes"
+			}
+			fmt.Printf("%-30s %s\n", c.Name, internal)
 		}
 
 		return nil
@@ -380,15 +361,30 @@ var CategoryList = &Z.Cmd{
 
 var CategoryAdd = &Z.Cmd{
 	Name:     "add",
-	Summary:  "Add a new category",
-	Usage:    "add <name>",
+	Summary:  "Add a new category, optionally marking it as internal",
+	Usage:    "add <name> [--internal]",
 	Commands: []*Z.Cmd{help.Cmd},
 	Call: func(cmd *Z.Cmd, args ...string) error {
 		if len(args) < 1 {
-			return fmt.Errorf("usage: money transactions category add <name>")
+			return fmt.Errorf("usage: money transactions category add <name> [--internal]")
 		}
 
-		categoryName := strings.Join(args, " ")
+		isInternal := false
+		var nameArgs []string
+
+		for _, arg := range args {
+			if arg == "--internal" {
+				isInternal = true
+			} else {
+				nameArgs = append(nameArgs, arg)
+			}
+		}
+
+		if len(nameArgs) == 0 {
+			return fmt.Errorf("usage: money transactions category add <name> [--internal]")
+		}
+
+		categoryName := strings.Join(nameArgs, " ")
 
 		db, err := database.New()
 		if err != nil {
@@ -396,12 +392,16 @@ var CategoryAdd = &Z.Cmd{
 		}
 		defer db.Close()
 
-		_, err = db.SaveCategory(categoryName)
+		_, err = db.SaveCategoryWithInternal(categoryName, isInternal)
 		if err != nil {
 			return fmt.Errorf("failed to add category: %w", err)
 		}
 
-		fmt.Printf("Category '%s' added successfully\n", categoryName)
+		internalStatus := ""
+		if isInternal {
+			internalStatus = " (internal)"
+		}
+		fmt.Printf("Category '%s'%s added successfully\n", categoryName, internalStatus)
 		return nil
 	},
 }
@@ -455,6 +455,62 @@ var CategorySeed = &Z.Cmd{
 	},
 }
 
+var CategorySetInternal = &Z.Cmd{
+	Name:     "set-internal",
+	Summary:  "Mark a category as internal (excludes from budget calculations)",
+	Usage:    "set-internal <name>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("usage: money transactions category set-internal <name>")
+		}
+
+		categoryName := strings.Join(args, " ")
+
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		err = db.SetCategoryInternalByName(categoryName, true)
+		if err != nil {
+			return fmt.Errorf("failed to set category as internal: %w", err)
+		}
+
+		fmt.Printf("Category '%s' marked as internal\n", categoryName)
+		return nil
+	},
+}
+
+var CategoryClearInternal = &Z.Cmd{
+	Name:     "clear-internal",
+	Summary:  "Remove internal flag from a category",
+	Usage:    "clear-internal <name>",
+	Commands: []*Z.Cmd{help.Cmd},
+	Call: func(cmd *Z.Cmd, args ...string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("usage: money transactions category clear-internal <name>")
+		}
+
+		categoryName := strings.Join(args, " ")
+
+		db, err := database.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		defer db.Close()
+
+		err = db.SetCategoryInternalByName(categoryName, false)
+		if err != nil {
+			return fmt.Errorf("failed to clear internal flag: %w", err)
+		}
+
+		fmt.Printf("Internal flag removed from category '%s'\n", categoryName)
+		return nil
+	},
+}
+
 var CategorizeManual = &Z.Cmd{
 	Name:     "manual",
 	Summary:  "Interactive manual categorization using spreadsheet-style interface",
@@ -485,7 +541,7 @@ func autoCategorizeTransactions() error {
 
 	fmt.Printf("Found %d uncategorized transactions.\n\n", len(transactions))
 
-	// Get all accounts for transfer identification
+	// Get all accounts for context (helps LLM identify transfers and account-specific patterns)
 	accounts, err := db.GetAccounts()
 	if err != nil {
 		return fmt.Errorf("failed to get accounts: %w", err)
@@ -502,16 +558,26 @@ func autoCategorizeTransactions() error {
 		return nil
 	}
 
-	fmt.Printf("Using %d existing categories: ", len(categories))
-	categoryNames := make([]string, len(categories))
+	// Separate regular and internal categories for the LLM prompt
+	var regularCategories []string
+	var internalCategories []string
+	allCategoryNames := make([]string, len(categories))
+
 	for i, cat := range categories {
-		categoryNames[i] = cat.Name
-		if i > 0 {
-			fmt.Print(", ")
+		allCategoryNames[i] = cat.Name
+		if cat.IsInternal {
+			internalCategories = append(internalCategories, cat.Name)
+		} else {
+			regularCategories = append(regularCategories, cat.Name)
 		}
-		fmt.Print(cat.Name)
 	}
-	fmt.Println()
+
+	fmt.Printf("Using %d categories total: %d regular + %d internal\n",
+		len(categories), len(regularCategories), len(internalCategories))
+	fmt.Printf("Regular: %s\n", strings.Join(regularCategories, ", "))
+	if len(internalCategories) > 0 {
+		fmt.Printf("Internal: %s\n", strings.Join(internalCategories, ", "))
+	}
 
 	// Initialize LLM client
 	llmClient := llm.NewClient()
@@ -521,58 +587,7 @@ func autoCategorizeTransactions() error {
 	llmTransactions := convert.ToLLMTransactionData(transactions)
 	llmAccounts := convert.ToLLMAccountData(accounts)
 
-	// Step 1: Identify inter-account transfers
-	fmt.Println("🔄 Step 1: Identifying inter-account transfers...")
-	transferResult, err := llmClient.IdentifyTransfers(ctx, llmTransactions, llmAccounts)
-	if err != nil {
-		return fmt.Errorf("failed to identify transfers: %w", err)
-	}
-
-	// Apply transfer suggestions with user approval
-	transferCount := 0
-	for _, suggestion := range transferResult.Suggestions {
-		if !suggestion.IsTransfer {
-			continue
-		}
-
-		// Find the transaction to show details
-		var transaction *database.Transaction
-		for _, tx := range transactions {
-			if tx.ID == suggestion.TransactionID {
-				transaction = &tx
-				break
-			}
-		}
-
-		if transaction == nil {
-			continue
-		}
-
-		err = db.MarkTransactionAsTransfer(suggestion.TransactionID)
-		if err != nil {
-			return fmt.Errorf("failed to mark transaction as transfer: %w", err)
-		}
-		fmt.Printf("🔄 Transfer: %s\n", transaction.Description)
-		transferCount++
-	}
-
-	fmt.Printf("\n✅ Marked %d transactions as transfers.\n\n", transferCount)
-
-	// Refresh uncategorized transactions (excluding newly marked transfers)
-	transactions, err = db.GetUncategorizedTransactions()
-	if err != nil {
-		return fmt.Errorf("failed to refresh uncategorized transactions: %w", err)
-	}
-
-	// Update LLM transactions list for categorization step
-	llmTransactions = convert.ToLLMTransactionData(transactions)
-
-	if len(llmTransactions) == 0 {
-		fmt.Println("All transactions have been processed!")
-		return nil
-	}
-
-	// Step 2: Get examples from previously categorized transactions
+	// Get examples from previously categorized transactions
 	categorizedExamples, err := db.GetCategorizedExamples(10) // Get up to 10 examples
 	if err != nil {
 		return fmt.Errorf("failed to get categorized examples: %w", err)
@@ -587,9 +602,9 @@ func autoCategorizeTransactions() error {
 		fmt.Printf("📚 Using %d examples from previously categorized transactions\n", len(examples))
 	}
 
-	// Step 2: Categorize remaining transactions using user's existing categories
-	fmt.Printf("📝 Step 2: Categorizing %d remaining transactions using your existing categories...\n", len(llmTransactions))
-	categoryResult, err := llmClient.CategorizeTransactionsWithExamples(ctx, llmTransactions, categoryNames, examples)
+	// Categorize transactions using user's existing categories
+	fmt.Printf("📝 Categorizing %d transactions using your existing categories...\n", len(llmTransactions))
+	categoryResult, err := llmClient.CategorizeTransactionsWithExamples(ctx, llmTransactions, categories, llmAccounts, examples)
 	if err != nil {
 		return fmt.Errorf("failed to categorize transactions: %w", err)
 	}
@@ -626,7 +641,6 @@ func autoCategorizeTransactions() error {
 	}
 
 	fmt.Printf("\n🎉 Auto-categorization complete!\n")
-	fmt.Printf("   Transfers marked: %d\n", transferCount)
 	fmt.Printf("   Transactions categorized: %d\n", categoryCount)
 
 	return nil
@@ -634,184 +648,8 @@ func autoCategorizeTransactions() error {
 
 // recategorizeAllTransactions recategorizes ALL transactions using LLM
 func recategorizeAllTransactions() error {
-	db, err := database.New()
-	if err != nil {
-		return fmt.Errorf("failed to initialize database: %w", err)
-	}
-	defer db.Close()
-
-	// Get ALL transactions (not just uncategorized)
-	transactions, err := db.GetTransactions("", "", "")
-	if err != nil {
-		return fmt.Errorf("failed to get transactions: %w", err)
-	}
-
-	if len(transactions) == 0 {
-		fmt.Println("No transactions found.")
-		return nil
-	}
-
-	fmt.Printf("Found %d total transactions to recategorize.\n\n", len(transactions))
-
-	// Get all accounts for transfer identification
-	accounts, err := db.GetAccounts()
-	if err != nil {
-		return fmt.Errorf("failed to get accounts: %w", err)
-	}
-
-	// Get user's existing categories for categorization
-	categories, err := db.GetCategories()
-	if err != nil {
-		return fmt.Errorf("failed to get categories: %w", err)
-	}
-
-	if len(categories) == 0 {
-		fmt.Println("No categories found. Please run 'money transactions category seed' first to create default categories, or add categories manually using 'money transactions category add <name>'.")
-		return nil
-	}
-
-	fmt.Printf("Using %d existing categories: ", len(categories))
-	categoryNames := make([]string, len(categories))
-	for i, cat := range categories {
-		categoryNames[i] = cat.Name
-		if i > 0 {
-			fmt.Print(", ")
-		}
-		fmt.Print(cat.Name)
-	}
-	fmt.Println()
-
-	// Initialize LLM client
-	llmClient := llm.NewClient()
-	ctx := context.Background()
-
-	// Convert database types to LLM types
-	llmTransactions := convert.ToLLMTransactionData(transactions)
-	llmAccounts := convert.ToLLMAccountData(accounts)
-
-	// Step 1: Re-identify inter-account transfers (clear existing transfer flags first)
-	fmt.Println("🔄 Step 1: Re-identifying inter-account transfers...")
-
-	// Clear existing transfer flags for all transactions
-	for _, tx := range transactions {
-		if tx.IsTransfer {
-			// Clear transfer flag by setting is_transfer to false
-			err = db.ClearTransferFlag(tx.ID)
-			if err != nil {
-				return fmt.Errorf("failed to clear transfer flag: %w", err)
-			}
-		}
-	}
-
-	transferResult, err := llmClient.IdentifyTransfers(ctx, llmTransactions, llmAccounts)
-	if err != nil {
-		return fmt.Errorf("failed to identify transfers: %w", err)
-	}
-
-	// Apply transfer suggestions with user approval
-	transferCount := 0
-	for _, suggestion := range transferResult.Suggestions {
-		if !suggestion.IsTransfer {
-			continue
-		}
-
-		// Find the transaction to show details
-		var transaction *database.Transaction
-		for _, tx := range transactions {
-			if tx.ID == suggestion.TransactionID {
-				transaction = &tx
-				break
-			}
-		}
-
-		if transaction == nil {
-			continue
-		}
-
-		err = db.MarkTransactionAsTransfer(suggestion.TransactionID)
-		if err != nil {
-			return fmt.Errorf("failed to mark transaction as transfer: %w", err)
-		}
-		fmt.Printf("🔄 Transfer: %s\n", transaction.Description)
-		transferCount++
-	}
-
-	fmt.Printf("\n✅ Marked %d transactions as transfers.\n\n", transferCount)
-
-	// Step 2: Clear all existing categories and recategorize everything
-	fmt.Println("📝 Step 2: Clearing existing categories and recategorizing all non-transfer transactions...")
-
-	// Get all transactions again to get updated transfer status
-	transactions, err = db.GetTransactions("", "", "")
-	if err != nil {
-		return fmt.Errorf("failed to refresh transactions: %w", err)
-	}
-
-	// Clear categories for all non-transfer transactions
-	nonTransferTransactions := []database.Transaction{}
-	for _, tx := range transactions {
-		if !tx.IsTransfer {
-			// Clear existing category
-			err = db.ClearTransactionCategory(tx.ID)
-			if err != nil {
-				return fmt.Errorf("failed to clear category for transaction %s: %w", tx.ID, err)
-			}
-			nonTransferTransactions = append(nonTransferTransactions, tx)
-		}
-	}
-
-	if len(nonTransferTransactions) == 0 {
-		fmt.Println("All transactions are marked as transfers. No categorization needed.")
-		fmt.Printf("\n🎉 Recategorization complete!\n")
-		fmt.Printf("   Transfers marked: %d\n", transferCount)
-		fmt.Printf("   Transactions categorized: 0\n")
-		return nil
-	}
-
-	// Convert to LLM format for categorization
-	llmTransactions = convert.ToLLMTransactionData(nonTransferTransactions)
-
-	fmt.Printf("Categorizing %d non-transfer transactions...\n", len(llmTransactions))
-	// Note: No examples available since we cleared all categories for --all mode
-	categoryResult, err := llmClient.CategorizeTransactionsWithExamples(ctx, llmTransactions, categoryNames, nil)
-	if err != nil {
-		return fmt.Errorf("failed to categorize transactions: %w", err)
-	}
-
-	// Apply category suggestions with user approval
-	categoryCount := 0
-	for _, suggestion := range categoryResult.Suggestions {
-		// Find the transaction to show details
-		var transaction *database.Transaction
-		for _, tx := range nonTransferTransactions {
-			if tx.ID == suggestion.TransactionID {
-				transaction = &tx
-				break
-			}
-		}
-
-		if transaction == nil {
-			continue
-		}
-
-		// Get category ID
-		categoryID, err := db.SaveCategory(suggestion.Category)
-		if err != nil {
-			return fmt.Errorf("failed to get category ID: %w", err)
-		}
-
-		// Update transaction category
-		err = db.UpdateTransactionCategory(suggestion.TransactionID, categoryID)
-		if err != nil {
-			return fmt.Errorf("failed to update transaction category: %w", err)
-		}
-		fmt.Printf("💸 %s → %s\n", transaction.Description, suggestion.Category)
-		categoryCount++
-	}
-
-	fmt.Printf("\n🎉 Recategorization complete!\n")
-	fmt.Printf("   Transfers marked: %d\n", transferCount)
-	fmt.Printf("   Transactions categorized: %d\n", categoryCount)
-
+	// TODO: This function needs to be updated to work with internal categories instead of transfer flags
+	fmt.Println("⚠️  Recategorize all functionality temporarily disabled during refactor")
+	fmt.Println("Please use 'money transactions categorize auto' for new categorization")
 	return nil
 }

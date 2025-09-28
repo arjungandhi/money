@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/arjungandhi/money/pkg/database"
 )
 
 // Client handles LLM interactions using configurable external commands
@@ -70,11 +72,19 @@ func (c *Client) IdentifyTransfers(ctx context.Context, transactions []Transacti
 }
 
 func (c *Client) CategorizeTransactions(ctx context.Context, transactions []TransactionData, categories []string) (*CategoryAnalysisResult, error) {
-	return c.CategorizeTransactionsWithExamples(ctx, transactions, categories, nil)
+	// Convert string categories to database.Category structs (all as regular categories)
+	categoryStructs := make([]database.Category, len(categories))
+	for i, cat := range categories {
+		categoryStructs[i] = database.Category{
+			Name:       cat,
+			IsInternal: false,
+		}
+	}
+	return c.CategorizeTransactionsWithExamples(ctx, transactions, categoryStructs, nil, nil)
 }
 
-func (c *Client) CategorizeTransactionsWithExamples(ctx context.Context, transactions []TransactionData, categories []string, examples []CategorizedExample) (*CategoryAnalysisResult, error) {
-	prompt := buildCategorizationPrompt(transactions, categories, examples)
+func (c *Client) CategorizeTransactionsWithExamples(ctx context.Context, transactions []TransactionData, categories []database.Category, accounts []AccountData, examples []CategorizedExample) (*CategoryAnalysisResult, error) {
+	prompt := buildCategorizationPrompt(transactions, categories, accounts, examples)
 
 	response, err := c.runLLMCommand(ctx, prompt)
 	if err != nil {
@@ -224,7 +234,7 @@ Return ONLY the raw JSON object with no markdown formatting:`)
 }
 
 // buildCategorizationPrompt creates a prompt for categorizing transactions
-func buildCategorizationPrompt(transactions []TransactionData, categories []string, examples []CategorizedExample) string {
+func buildCategorizationPrompt(transactions []TransactionData, categories []database.Category, accounts []AccountData, examples []CategorizedExample) string {
 	var prompt strings.Builder
 
 	prompt.WriteString(`You are a financial transaction categorizer. Your task is to categorize transactions using ONLY the provided categories.
@@ -234,11 +244,49 @@ CATEGORIZATION RULES:
 2. Match based on merchant names, transaction descriptions, and amount patterns
 3. Positive amounts = Income, Negative amounts = Expenses
 4. Be specific: "Starbucks" = Dining Out, "Whole Foods" = Groceries, "Shell Gas" = Transportation
+5. For inter-account transfers, use internal categories (like "Transfers")
 
-AVAILABLE CATEGORIES:
 `)
+
+	// Separate regular and internal categories
+	var regularCategories []string
+	var internalCategories []string
 	for _, category := range categories {
-		prompt.WriteString(fmt.Sprintf("- %s\n", category))
+		if category.IsInternal {
+			internalCategories = append(internalCategories, category.Name)
+		} else {
+			regularCategories = append(regularCategories, category.Name)
+		}
+	}
+
+	// Display categories with clear labeling
+	if len(regularCategories) > 0 {
+		prompt.WriteString("REGULAR CATEGORIES (for income/expenses):\n")
+		for _, category := range regularCategories {
+			prompt.WriteString(fmt.Sprintf("- %s\n", category))
+		}
+		prompt.WriteString("\n")
+	}
+
+	if len(internalCategories) > 0 {
+		prompt.WriteString("INTERNAL CATEGORIES (for transfers between your own accounts):\n")
+		for _, category := range internalCategories {
+			prompt.WriteString(fmt.Sprintf("- %s\n", category))
+		}
+		prompt.WriteString("\n")
+	}
+
+	// Add account information for transfer detection
+	if len(accounts) > 0 {
+		prompt.WriteString("YOUR ACCOUNTS:\n")
+		for _, account := range accounts {
+			displayName := account.Name
+			if account.Nickname != "" {
+				displayName = account.Nickname
+			}
+			prompt.WriteString(fmt.Sprintf("- %s (%s) - Type: %s\n", account.ID, displayName, account.AccountType))
+		}
+		prompt.WriteString("\n")
 	}
 
 	// Add examples section if provided
@@ -271,6 +319,12 @@ MATCHING GUIDELINES:
 - Salary/Paycheck deposits → "Income"
 - Utility companies (PG&E, Comcast, etc.) → "Bills & Services"
 - Retail stores (Target, Amazon, etc.) → "Shopping"
+
+TRANSFER DETECTION:
+Look for transactions that move money between the user's own accounts:
+- Descriptions containing "transfer", "move", "deposit from", "withdrawal to"
+- Matching amounts (+$X and -$X) on same/similar dates
+- Movement between accounts listed above → Use internal categories (like "Transfers")
 
 CONFIDENCE SCORING:
 - 0.8+ = Very confident (obvious match like "Starbucks Coffee" → Dining Out)

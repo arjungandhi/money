@@ -62,6 +62,7 @@ CREATE TABLE properties (
 CREATE TABLE categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    is_internal BOOLEAN DEFAULT FALSE,  -- Internal categories excluded from budget calculations
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -83,7 +84,6 @@ CREATE TABLE transactions (
     amount INTEGER NOT NULL,  -- Store as cents
     description TEXT NOT NULL,
     pending BOOLEAN DEFAULT FALSE,
-    is_transfer BOOLEAN DEFAULT FALSE,  -- Excludes from income/expense calculations
     category_id INTEGER,  -- NULL for uncategorized transactions
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -95,7 +95,7 @@ CREATE TABLE transactions (
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_posted ON transactions(posted);
 CREATE INDEX idx_transactions_category_id ON transactions(category_id);
-CREATE INDEX idx_transactions_is_transfer ON transactions(is_transfer);
+CREATE INDEX idx_categories_is_internal ON categories(is_internal);
 CREATE INDEX idx_accounts_org_id ON accounts(org_id);
 CREATE INDEX idx_balance_history_account_id ON balance_history(account_id);
 CREATE INDEX idx_balance_history_recorded_at ON balance_history(recorded_at);

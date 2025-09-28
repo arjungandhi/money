@@ -96,7 +96,29 @@ func (db *DB) runIncrementalMigrations() error {
 		}
 	}
 
-	// Check if is_transfer column exists in transactions table
+	// Check if is_internal column exists in categories table
+	var internalColumnExists int
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM pragma_table_info('categories')
+		WHERE name = 'is_internal'
+	`).Scan(&internalColumnExists)
+	if err != nil {
+		return fmt.Errorf("failed to check is_internal column: %w", err)
+	}
+
+	// Add is_internal column if it doesn't exist
+	if internalColumnExists == 0 {
+		_, err = db.conn.Exec(`
+			ALTER TABLE categories
+			ADD COLUMN is_internal BOOLEAN DEFAULT FALSE
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add is_internal column: %w", err)
+		}
+	}
+
+	// Remove is_transfer column from transactions if it exists
 	var transferColumnExists int
 	err = db.conn.QueryRow(`
 		SELECT COUNT(*)
@@ -107,15 +129,82 @@ func (db *DB) runIncrementalMigrations() error {
 		return fmt.Errorf("failed to check is_transfer column: %w", err)
 	}
 
-	// Add is_transfer column if it doesn't exist
-	if transferColumnExists == 0 {
-		_, err = db.conn.Exec(`
-			ALTER TABLE transactions
-			ADD COLUMN is_transfer BOOLEAN DEFAULT FALSE
+	// Remove is_transfer column from transactions if it exists (recreate table)
+	if transferColumnExists > 0 {
+		// Start a transaction for this complex migration
+		tx, err := db.conn.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
+		// Create new transactions table without is_transfer column
+		_, err = tx.Exec(`
+			CREATE TABLE transactions_new (
+				id TEXT PRIMARY KEY,
+				account_id TEXT NOT NULL,
+				posted DATETIME NOT NULL,
+				amount INTEGER NOT NULL,
+				description TEXT NOT NULL,
+				pending BOOLEAN DEFAULT FALSE,
+				category_id INTEGER,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (account_id) REFERENCES accounts(id),
+				FOREIGN KEY (category_id) REFERENCES categories(id)
+			)
 		`)
 		if err != nil {
-			return fmt.Errorf("failed to add is_transfer column: %w", err)
+			return fmt.Errorf("failed to create new transactions table: %w", err)
 		}
+
+		// Copy data from old table to new (without is_transfer column)
+		_, err = tx.Exec(`
+			INSERT INTO transactions_new (id, account_id, posted, amount, description, pending, category_id, created_at, updated_at)
+			SELECT id, account_id, posted, amount, description, pending, category_id, created_at, updated_at FROM transactions
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to copy transactions data: %w", err)
+		}
+
+		// Drop old table and rename new one
+		_, err = tx.Exec(`DROP TABLE transactions`)
+		if err != nil {
+			return fmt.Errorf("failed to drop old transactions table: %w", err)
+		}
+
+		_, err = tx.Exec(`ALTER TABLE transactions_new RENAME TO transactions`)
+		if err != nil {
+			return fmt.Errorf("failed to rename new transactions table: %w", err)
+		}
+
+		// Recreate indexes for transactions
+		_, err = tx.Exec(`CREATE INDEX idx_transactions_account_id ON transactions(account_id)`)
+		if err != nil {
+			return fmt.Errorf("failed to create transactions account_id index: %w", err)
+		}
+
+		_, err = tx.Exec(`CREATE INDEX idx_transactions_posted ON transactions(posted)`)
+		if err != nil {
+			return fmt.Errorf("failed to create transactions posted index: %w", err)
+		}
+
+		_, err = tx.Exec(`CREATE INDEX idx_transactions_category_id ON transactions(category_id)`)
+		if err != nil {
+			return fmt.Errorf("failed to create transactions category_id index: %w", err)
+		}
+
+		// Commit the transaction
+		err = tx.Commit()
+		if err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+	}
+
+	// Create index for categories is_internal if it doesn't exist
+	_, err = db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_categories_is_internal ON categories(is_internal)`)
+	if err != nil {
+		return fmt.Errorf("failed to create categories is_internal index: %w", err)
 	}
 
 	// Check if type column exists in categories table and remove it if it does
@@ -832,8 +921,8 @@ func (db *DB) SaveTransaction(id, accountID, posted string, amount int, descript
 	// Use INSERT OR IGNORE to avoid duplicate transactions
 	// If the transaction already exists, we don't update it to preserve any manual categorization
 	_, err := db.conn.Exec(`
-		INSERT OR IGNORE INTO transactions (id, account_id, posted, amount, description, pending, is_transfer)
-		VALUES (?, ?, ?, ?, ?, ?, FALSE)`,
+		INSERT OR IGNORE INTO transactions (id, account_id, posted, amount, description, pending)
+		VALUES (?, ?, ?, ?, ?, ?)`,
 		id, accountID, posted, amount, description, pending)
 	if err != nil {
 		return fmt.Errorf("failed to save transaction: %w", err)
@@ -848,14 +937,14 @@ func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Tr
 	if accountID != "" {
 		if startDate != "" && endDate != "" {
 			query = `
-				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
 				FROM transactions t
 				WHERE t.account_id = ? AND t.posted >= ? AND t.posted <= ?
 				ORDER BY t.posted DESC`
 			args = []interface{}{accountID, startDate, endDate}
 		} else {
 			query = `
-				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
 				FROM transactions t
 				WHERE t.account_id = ?
 				ORDER BY t.posted DESC`
@@ -864,14 +953,14 @@ func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Tr
 	} else {
 		if startDate != "" && endDate != "" {
 			query = `
-				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
 				FROM transactions t
 				WHERE t.posted >= ? AND t.posted <= ?
 				ORDER BY t.posted DESC`
 			args = []interface{}{startDate, endDate}
 		} else {
 			query = `
-				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
+				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
 				FROM transactions t
 				ORDER BY t.posted DESC`
 			args = []interface{}{}
@@ -896,7 +985,6 @@ func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Tr
 			&t.Amount,
 			&t.Description,
 			&t.Pending,
-			&t.IsTransfer,
 			&categoryID,
 		)
 		if err != nil {
@@ -920,7 +1008,7 @@ func (db *DB) GetTransactions(accountID string, startDate, endDate string) ([]Tr
 
 func (db *DB) GetUncategorizedTransactions() ([]Transaction, error) {
 	query := `
-		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, COALESCE(t.is_transfer, FALSE), t.category_id
+		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
 		FROM transactions t
 		WHERE t.category_id IS NULL
 		ORDER BY t.posted DESC`
@@ -943,7 +1031,6 @@ func (db *DB) GetUncategorizedTransactions() ([]Transaction, error) {
 			&t.Amount,
 			&t.Description,
 			&t.Pending,
-			&t.IsTransfer,
 			&categoryID,
 		)
 		if err != nil {
@@ -996,11 +1083,15 @@ func (db *DB) TransactionExists(id string) (bool, error) {
 
 // Category methods
 func (db *DB) SaveCategory(name string) (int, error) {
+	return db.SaveCategoryWithInternal(name, false)
+}
+
+func (db *DB) SaveCategoryWithInternal(name string, isInternal bool) (int, error) {
 	// Use INSERT OR IGNORE to avoid duplicate categories, then get the ID
 	_, err := db.conn.Exec(`
-		INSERT OR IGNORE INTO categories (name)
-		VALUES (?)`,
-		name)
+		INSERT OR IGNORE INTO categories (name, is_internal)
+		VALUES (?, ?)`,
+		name, isInternal)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert category: %w", err)
 	}
@@ -1020,7 +1111,7 @@ func (db *DB) SaveCategory(name string) (int, error) {
 
 func (db *DB) GetCategories() ([]Category, error) {
 	query := `
-		SELECT id, name
+		SELECT id, name, COALESCE(is_internal, FALSE)
 		FROM categories
 		ORDER BY name`
 
@@ -1033,7 +1124,7 @@ func (db *DB) GetCategories() ([]Category, error) {
 	var categories []Category
 	for rows.Next() {
 		var c Category
-		err := rows.Scan(&c.ID, &c.Name)
+		err := rows.Scan(&c.ID, &c.Name, &c.IsInternal)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan category: %w", err)
 		}
@@ -1050,10 +1141,10 @@ func (db *DB) GetCategories() ([]Category, error) {
 func (db *DB) GetCategoryByID(categoryID int) (*Category, error) {
 	var c Category
 	err := db.conn.QueryRow(`
-		SELECT id, name
+		SELECT id, name, COALESCE(is_internal, FALSE)
 		FROM categories
 		WHERE id = ?`,
-		categoryID).Scan(&c.ID, &c.Name)
+		categoryID).Scan(&c.ID, &c.Name, &c.IsInternal)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("category not found: %d", categoryID)
@@ -1097,6 +1188,7 @@ func (db *DB) DeleteCategory(name string) error {
 }
 
 func (db *DB) SeedDefaultCategories() error {
+	// Regular categories
 	defaultCategories := []string{
 		"Housing",
 		"Transportation",
@@ -1115,6 +1207,12 @@ func (db *DB) SeedDefaultCategories() error {
 		"Other",
 	}
 
+	// Internal categories (excluded from budget calculations)
+	internalCategories := []string{
+		"Transfers",
+	}
+
+	// Seed regular categories
 	for _, categoryName := range defaultCategories {
 		_, err := db.SaveCategory(categoryName)
 		if err != nil {
@@ -1122,17 +1220,25 @@ func (db *DB) SeedDefaultCategories() error {
 		}
 	}
 
+	// Seed internal categories
+	for _, categoryName := range internalCategories {
+		_, err := db.SaveCategoryWithInternal(categoryName, true)
+		if err != nil {
+			return fmt.Errorf("failed to seed internal category '%s': %w", categoryName, err)
+		}
+	}
+
 	return nil
 }
 
-func (db *DB) MarkTransactionAsTransfer(transactionID string) error {
+func (db *DB) SetCategoryInternal(categoryID int, isInternal bool) error {
 	result, err := db.conn.Exec(`
-		UPDATE transactions
-		SET is_transfer = TRUE, updated_at = CURRENT_TIMESTAMP
+		UPDATE categories
+		SET is_internal = ?
 		WHERE id = ?`,
-		transactionID)
+		isInternal, categoryID)
 	if err != nil {
-		return fmt.Errorf("failed to mark transaction as transfer: %w", err)
+		return fmt.Errorf("failed to set category internal flag: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -1141,20 +1247,20 @@ func (db *DB) MarkTransactionAsTransfer(transactionID string) error {
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("transaction not found: %s", transactionID)
+		return fmt.Errorf("category not found: %d", categoryID)
 	}
 
 	return nil
 }
 
-func (db *DB) ClearTransferFlag(transactionID string) error {
+func (db *DB) SetCategoryInternalByName(categoryName string, isInternal bool) error {
 	result, err := db.conn.Exec(`
-		UPDATE transactions
-		SET is_transfer = FALSE, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?`,
-		transactionID)
+		UPDATE categories
+		SET is_internal = ?
+		WHERE name = ?`,
+		isInternal, categoryName)
 	if err != nil {
-		return fmt.Errorf("failed to clear transfer flag: %w", err)
+		return fmt.Errorf("failed to set category internal flag: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -1163,7 +1269,7 @@ func (db *DB) ClearTransferFlag(transactionID string) error {
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("transaction not found: %s", transactionID)
+		return fmt.Errorf("category not found: %s", categoryName)
 	}
 
 	return nil
@@ -1263,27 +1369,27 @@ func (db *DB) GetAllBalanceHistory(days int) ([]BalanceHistory, error) {
 }
 
 // GetTransactionsByCategory gets transactions grouped by category for costs/income analysis
-func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeTransfers bool) (map[string][]Transaction, error) {
+func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeInternal bool) (map[string][]Transaction, error) {
 	var query string
 	var args []interface{}
 
-	if excludeTransfers {
+	if excludeInternal {
 		if startDate != "" && endDate != "" {
 			query = `
 				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
-				       COALESCE(t.is_transfer, FALSE), t.category_id, c.name as category_name
+				       t.category_id, c.name as category_name
 				FROM transactions t
 				LEFT JOIN categories c ON t.category_id = c.id
-				WHERE t.posted >= ? AND t.posted <= ? AND COALESCE(t.is_transfer, FALSE) = FALSE
+				WHERE t.posted >= ? AND t.posted <= ? AND COALESCE(c.is_internal, FALSE) = FALSE
 				ORDER BY t.posted DESC`
 			args = []interface{}{startDate, endDate}
 		} else {
 			query = `
 				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
-				       COALESCE(t.is_transfer, FALSE), t.category_id, c.name as category_name
+				       t.category_id, c.name as category_name
 				FROM transactions t
 				LEFT JOIN categories c ON t.category_id = c.id
-				WHERE COALESCE(t.is_transfer, FALSE) = FALSE
+				WHERE COALESCE(c.is_internal, FALSE) = FALSE
 				ORDER BY t.posted DESC`
 			args = []interface{}{}
 		}
@@ -1291,7 +1397,7 @@ func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeTransf
 		if startDate != "" && endDate != "" {
 			query = `
 				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
-				       COALESCE(t.is_transfer, FALSE), t.category_id, c.name as category_name
+				       t.category_id, c.name as category_name
 				FROM transactions t
 				LEFT JOIN categories c ON t.category_id = c.id
 				WHERE t.posted >= ? AND t.posted <= ?
@@ -1300,7 +1406,7 @@ func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeTransf
 		} else {
 			query = `
 				SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
-				       COALESCE(t.is_transfer, FALSE), t.category_id, c.name as category_name
+				       t.category_id, c.name as category_name
 				FROM transactions t
 				LEFT JOIN categories c ON t.category_id = c.id
 				ORDER BY t.posted DESC`
@@ -1328,7 +1434,6 @@ func (db *DB) GetTransactionsByCategory(startDate, endDate string, excludeTransf
 			&t.Amount,
 			&t.Description,
 			&t.Pending,
-			&t.IsTransfer,
 			&categoryID,
 			&categoryName,
 		)
@@ -1544,7 +1649,6 @@ type Transaction struct {
 	Amount      int
 	Description string
 	Pending     bool
-	IsTransfer  bool
 	CategoryID  *int
 }
 
@@ -1555,8 +1659,9 @@ type Organization struct {
 }
 
 type Category struct {
-	ID   int
-	Name string
+	ID         int
+	Name       string
+	IsInternal bool
 }
 
 type Property struct {
@@ -1577,10 +1682,10 @@ type Property struct {
 // GetCategorizedExamples returns a sample of categorized transactions for use as examples
 func (db *DB) GetCategorizedExamples(limit int) ([]Transaction, error) {
 	query := `
-		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending,
-		       COALESCE(t.is_transfer, FALSE), t.category_id
+		SELECT t.id, t.account_id, t.posted, t.amount, t.description, t.pending, t.category_id
 		FROM transactions t
-		WHERE t.category_id IS NOT NULL AND COALESCE(t.is_transfer, FALSE) = FALSE
+		LEFT JOIN categories c ON t.category_id = c.id
+		WHERE t.category_id IS NOT NULL AND COALESCE(c.is_internal, FALSE) = FALSE
 		ORDER BY t.posted DESC
 		LIMIT ?`
 
@@ -1594,7 +1699,7 @@ func (db *DB) GetCategorizedExamples(limit int) ([]Transaction, error) {
 	for rows.Next() {
 		var t Transaction
 		var categoryID *int
-		err := rows.Scan(&t.ID, &t.AccountID, &t.Posted, &t.Amount, &t.Description, &t.Pending, &t.IsTransfer, &categoryID)
+		err := rows.Scan(&t.ID, &t.AccountID, &t.Posted, &t.Amount, &t.Description, &t.Pending, &categoryID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan categorized example: %w", err)
 		}

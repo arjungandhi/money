@@ -39,17 +39,18 @@
         - `money transactions categorize manual`: fast spreadsheet-style TUI for manual transaction categorization
           - Vim-style keyboard navigation (j/k up/down, h/l left/right, gg/G top/bottom, Ctrl-f/Ctrl-b page up/down)
           - Quick category selection via numbered shortcuts for common categories
-          - Bulk operations: multi-select transactions (v for visual mode), mark multiple as transfers
+          - Bulk operations: multi-select transactions (v for visual mode), categorize multiple transactions
           - Inline category editing with auto-complete from existing categories
-          - Progress tracking and color-coded transactions (expenses/income/transfers)
+          - Progress tracking and color-coded transactions (expenses/income/internal)
           - Vim-like modal interface with normal/insert/visual modes
         - `money transactions categorize modify <transaction-id> <category-name>`: manually set or change the category of a specific transaction
         - `money transactions categorize clear <transaction-id>`: clear the category of a specific transaction (set to uncategorized)
-        - `money transactions categorize transfer <transaction-id>`: mark transaction as a transfer (excludes from income/expense calculations)
 - `money transactions category`: manage transaction categories
-  - `money transactions category list`: show all existing categories
-  - `money transactions category add <name>`: add a new category
+  - `money transactions category list`: show all existing categories with their internal status
+  - `money transactions category add <name> [--internal]`: add a new category, optionally marking it as internal
   - `money transactions category remove <name>`: remove a category (only if not used by any transactions)
+  - `money transactions category set-internal <name>`: mark a category as internal (excludes from budget calculations)
+  - `money transactions category clear-internal <name>`: remove internal flag from a category
   - `money transactions category seed`: populate database with common default categories
 - `money property`: manage property accounts and valuations using RentCast API
   - `money property config <api-key>`: configure RentCast API key for property valuations
@@ -142,6 +143,7 @@ CREATE TABLE properties (
 CREATE TABLE categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    is_internal BOOLEAN DEFAULT FALSE,  -- Internal categories excluded from budget calculations
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -163,7 +165,6 @@ CREATE TABLE transactions (
     amount INTEGER NOT NULL,  -- Store as cents
     description TEXT NOT NULL,
     pending BOOLEAN DEFAULT FALSE,
-    is_transfer BOOLEAN DEFAULT FALSE,  -- Excludes from income/expense calculations
     category_id INTEGER,  -- NULL for uncategorized transactions
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -175,7 +176,7 @@ CREATE TABLE transactions (
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_posted ON transactions(posted);
 CREATE INDEX idx_transactions_category_id ON transactions(category_id);
-CREATE INDEX idx_transactions_is_transfer ON transactions(is_transfer);
+CREATE INDEX idx_categories_is_internal ON categories(is_internal);
 CREATE INDEX idx_accounts_org_id ON accounts(org_id);
 CREATE INDEX idx_balance_history_account_id ON balance_history(account_id);
 CREATE INDEX idx_balance_history_recorded_at ON balance_history(recorded_at);
