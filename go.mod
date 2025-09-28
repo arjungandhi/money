@@ -1,6 +1,6 @@
 module github.com/arjungandhi/money
 
-go 1.24.6
+go 1.25
 
 require (
 	github.com/charmbracelet/bubbles v0.11.0
