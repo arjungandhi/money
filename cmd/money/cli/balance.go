@@ -93,6 +93,9 @@ var Balance = &Z.Cmd{
 				fmt.Printf("Warning: could not generate balance trend graph: %v\n", err)
 			}
 
+			// Add spacing between graph and account balances table
+			fmt.Println()
+
 			// Create account balances table
 			config := table.DefaultConfig()
 			config.Title = "💰 Account Balances"
