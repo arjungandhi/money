@@ -1,1 +1,10 @@
-money
+# Compiled binary
+/money
+
+# IDE files
+.DS_Store
+*.swp
+*.swo
+
+# Local config/secrets
+.secret

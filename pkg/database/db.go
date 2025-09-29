@@ -1171,6 +1171,47 @@ func (db *DB) DeleteCategory(name string) error {
 	return nil
 }
 
+func (db *DB) GetCategoryUsageCount(categoryID int) (int, error) {
+	var count int
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*) FROM transactions
+		WHERE category_id = ?`,
+		categoryID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get category usage count: %w", err)
+	}
+	return count, nil
+}
+
+func (db *DB) DeleteCategoryByID(categoryID int) error {
+	// First clear any transactions using this category
+	_, err := db.conn.Exec(`
+		UPDATE transactions 
+		SET category_id = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE category_id = ?`,
+		categoryID)
+	if err != nil {
+		return fmt.Errorf("failed to clear transactions for category: %w", err)
+	}
+
+	// Delete the category
+	result, err := db.conn.Exec(`DELETE FROM categories WHERE id = ?`, categoryID)
+	if err != nil {
+		return fmt.Errorf("failed to delete category: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("category not found: %d", categoryID)
+	}
+
+	return nil
+}
+
 func (db *DB) SeedDefaultCategories() error {
 	// Regular categories
 	defaultCategories := []string{
