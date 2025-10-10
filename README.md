@@ -46,8 +46,11 @@ A powerful personal finance management CLI tool built in Go that connects to you
     sudo mv money /usr/local/bin/
     ```
     b. From Source:
-    ```bash
-    go install github.com/arjungandhi/money/cmd/money@latest
+    Mac OSX
+    ```bash 
+    go mod tidy 
+    go build -o money ./cmd/money
+    sudo mv money /usr/local/bin/
     ```
 
 2. **Initialize** with guided setup:
