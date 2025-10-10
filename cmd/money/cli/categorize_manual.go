@@ -160,6 +160,7 @@ func NewCategorizationModel() (*CategorizationModel, error) {
 		}
 
 		// Create table with columns and highlighting using calculated widths
+		// Use a reasonable default page size that will be updated on window resize
 		tableModel := table.New([]table.Column{
 			table.NewColumn(columnKeyDate, "Date", colWidths.date),
 			table.NewColumn(columnKeyAccount, "Account", colWidths.account),
@@ -168,7 +169,7 @@ func NewCategorizationModel() (*CategorizationModel, error) {
 			table.NewColumn(columnKeyCategory, "Category", colWidths.category),
 		}).WithRows(rows).
 			BorderRounded().
-			WithPageSize(25).
+			WithPageSize(20). // Use a more conservative default page size
 			Focused(true).
 			WithBaseStyle(lipgloss.NewStyle().
 				BorderForeground(lipgloss.Color("#00d7ff")).
@@ -290,59 +291,83 @@ func (m CategorizationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleWindowResize handles terminal resize events
 func (m CategorizationModel) handleWindowResize(windowMsg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
-	if m.width == 0 || m.height == 0 {
-		// First time getting terminal size, recalculate table dimensions
-		m.width = windowMsg.Width
-		m.height = windowMsg.Height
+	// Always update dimensions when window is resized
+	m.width = windowMsg.Width
+	m.height = windowMsg.Height
 
-		// Calculate page size based on terminal height
-		overhead := 11
-		pageSize := windowMsg.Height - overhead
-		if pageSize < 5 {
-			pageSize = 5
-		}
-		if pageSize > 50 {
-			pageSize = 50
-		}
-
-		// Calculate dynamic column widths
-		remainingWidth := windowMsg.Width - 24 - 10
-		accountWidth := remainingWidth * 20 / 100
-		categoryWidth := remainingWidth * 25 / 100
-		descriptionWidth := remainingWidth * 55 / 100
-
-		// Set minimum widths
-		if accountWidth < 15 {
-			accountWidth = 15
-		}
-		if categoryWidth < 18 {
-			categoryWidth = 18
-		}
-		if descriptionWidth < 30 {
-			descriptionWidth = 30
-		}
-
-		// Update table with calculated dimensions
-		m.table = table.New([]table.Column{
-			table.NewColumn(columnKeyDate, "Date", 12),
-			table.NewColumn(columnKeyAccount, "Account", accountWidth),
-			table.NewColumn(columnKeyAmount, "Amount", 12),
-			table.NewColumn(columnKeyDescription, "Description", descriptionWidth),
-			table.NewColumn(columnKeyCategory, "Category", categoryWidth),
-		}).WithRows(m.getRebuildRows()).
-			BorderRounded().
-			WithPageSize(pageSize).
-			Focused(true).
-			WithBaseStyle(lipgloss.NewStyle().
-				BorderForeground(lipgloss.Color("#00d7ff")).
-				Align(lipgloss.Left)).
-			WithRowStyleFunc(func(input table.RowStyleFuncInput) lipgloss.Style {
-				if input.IsHighlighted {
-					return lipgloss.NewStyle().Background(lipgloss.Color("#555"))
-				}
-				return lipgloss.NewStyle()
-			})
+	// Calculate page size based on terminal height
+	// Account for header, instructions, status, and borders
+	overhead := 15 // Increased overhead to account for all UI elements
+	pageSize := windowMsg.Height - overhead
+	if pageSize < 5 {
+		pageSize = 5
 	}
+	if pageSize > 50 {
+		pageSize = 50
+	}
+
+	// Calculate dynamic column widths
+	remainingWidth := windowMsg.Width - 24 - 10 // Account for borders and padding
+	accountWidth := remainingWidth * 20 / 100
+	categoryWidth := remainingWidth * 25 / 100
+	descriptionWidth := remainingWidth * 55 / 100
+
+	// Set minimum widths
+	if accountWidth < 15 {
+		accountWidth = 15
+	}
+	if categoryWidth < 18 {
+		categoryWidth = 18
+	}
+	if descriptionWidth < 30 {
+		descriptionWidth = 30
+	}
+
+	// Get current highlighted row index to preserve position
+	currentHighlightedRow := m.table.GetHighlightedRowIndex()
+
+	// Update table with calculated dimensions
+	m.table = table.New([]table.Column{
+		table.NewColumn(columnKeyDate, "Date", 12),
+		table.NewColumn(columnKeyAccount, "Account", accountWidth),
+		table.NewColumn(columnKeyAmount, "Amount", 12),
+		table.NewColumn(columnKeyDescription, "Description", descriptionWidth),
+		table.NewColumn(columnKeyCategory, "Category", categoryWidth),
+	}).WithRows(m.getRebuildRows()).
+		BorderRounded().
+		WithPageSize(pageSize).
+		Focused(true).
+		WithHighlightedRow(currentHighlightedRow). // Preserve current position
+		WithBaseStyle(lipgloss.NewStyle().
+			BorderForeground(lipgloss.Color("#00d7ff")).
+			Align(lipgloss.Left)).
+		WithRowStyleFunc(func(input table.RowStyleFuncInput) lipgloss.Style {
+			// Check if this row is selected in visual mode
+			isSelected := m.selectedRows[input.Index]
+
+			// Visual selection styling (takes priority)
+			if isSelected {
+				return lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("#ffffff")).
+					Background(lipgloss.Color("#555"))
+			}
+
+			// Current row highlighting
+			if input.IsHighlighted {
+				if m.visualMode {
+					// In visual mode, show lighter highlight for current row
+					return lipgloss.NewStyle().
+						Background(lipgloss.Color("#666"))
+				} else {
+					// Normal highlighting
+					return lipgloss.NewStyle().
+						Background(lipgloss.Color("#555"))
+				}
+			}
+			return lipgloss.NewStyle()
+		})
+
 	return m, nil
 }
 
@@ -873,11 +898,56 @@ func (m *CategorizationModel) refreshTransactionView() {
 		return
 	}
 
-	// Update rows while preserving the table styling
-	m.table = m.table.WithRows(m.getRebuildRows())
+    // Preserve current highlighted row position
+    currentHighlightedRow := m.table.GetHighlightedRowIndex()
 
-	// Update visual styling if needed
-	m.updateTableStyling()
+    // Build fresh table model to avoid any internal state inconsistencies
+    // Compute page size
+    overhead := 15
+    pageSize := 20
+    if m.height > 0 {
+        pageSize = m.height - overhead
+        if pageSize < 5 {
+            pageSize = 5
+        }
+        if pageSize > 50 {
+            pageSize = 50
+        }
+    }
+
+    // Compute column widths either from current window size or fall back to sensible defaults
+    accountWidth := 20
+    categoryWidth := 22
+    descriptionWidth := 50
+    if m.width > 0 {
+        remainingWidth := m.width - 24 - 10
+        aw := remainingWidth * 20 / 100
+        cw := remainingWidth * 25 / 100
+        dw := remainingWidth * 55 / 100
+        if aw < 15 { aw = 15 }
+        if cw < 18 { cw = 18 }
+        if dw < 30 { dw = 30 }
+        accountWidth, categoryWidth, descriptionWidth = aw, cw, dw
+    }
+
+    // Recreate table with fresh rows and preserved highlight
+    m.table = table.New([]table.Column{
+        table.NewColumn(columnKeyDate, "Date", 12),
+        table.NewColumn(columnKeyAccount, "Account", accountWidth),
+        table.NewColumn(columnKeyAmount, "Amount", 12),
+        table.NewColumn(columnKeyDescription, "Description", descriptionWidth),
+        table.NewColumn(columnKeyCategory, "Category", categoryWidth),
+    }).WithRows(m.getRebuildRows()).
+        BorderRounded().
+        WithPageSize(pageSize).
+        Focused(true).
+        WithHighlightedRow(currentHighlightedRow).
+        WithBaseStyle(lipgloss.NewStyle().
+            BorderForeground(lipgloss.Color("#00d7ff")).
+            Align(lipgloss.Left))
+
+    // Re-apply row styling (selection/highlight)
+    m.updateTableStyling()
 }
 
 func (m *CategorizationModel) updateTableStyling() {
