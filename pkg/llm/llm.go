@@ -60,8 +60,11 @@ func (c *Client) CategorizeTransactionsWithExamples(ctx context.Context, transac
 		return nil, fmt.Errorf("failed to run LLM command for categorization: %w", err)
 	}
 
+	// Strip markdown code blocks if present
+	cleanedResponse := stripMarkdownCodeBlocks(response)
+
 	var result CategoryAnalysisResult
-	err = json.Unmarshal([]byte(response), &result)
+	err = json.Unmarshal([]byte(cleanedResponse), &result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse LLM response for categories: %w", err)
 	}
@@ -94,6 +97,33 @@ func (c *Client) runLLMCommand(ctx context.Context, prompt string) (string, erro
 	}
 
 	return strings.TrimSpace(string(output)), nil
+}
+
+// stripMarkdownCodeBlocks removes markdown code block formatting from LLM responses
+// Handles both ```json...``` and ```...``` formats
+func stripMarkdownCodeBlocks(response string) string {
+	response = strings.TrimSpace(response)
+
+	// Check if response starts with markdown code block
+	if strings.HasPrefix(response, "```") {
+		// Find the end of the opening marker (could be ```json or just ```)
+		firstNewline := strings.Index(response, "\n")
+		if firstNewline == -1 {
+			return response
+		}
+
+		// Remove the opening ```json or ```
+		response = response[firstNewline+1:]
+
+		// Remove the closing ```
+		if strings.HasSuffix(response, "```") {
+			response = response[:len(response)-3]
+		}
+
+		response = strings.TrimSpace(response)
+	}
+
+	return response
 }
 
 // TransactionData represents transaction data for LLM processing
